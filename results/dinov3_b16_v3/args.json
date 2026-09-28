@@ -1,0 +1,22 @@
+{
+  "backbone": "vit_base_patch16_dinov3.lvd1689m",
+  "size": [
+    256,
+    128
+  ],
+  "epochs": 10,
+  "bs": 64,
+  "lr": 5e-05,
+  "wd": 0.05,
+  "layer_decay": 0.75,
+  "warmup": 0.5,
+  "label_smooth": 0.05,
+  "ds_alpha": 0.5,
+  "ema": 0.9995,
+  "train_splits": [
+    "train"
+  ],
+  "workers": 12,
+  "grad_ckpt": false,
+  "out": "../runs/dinov3_b16"
+}

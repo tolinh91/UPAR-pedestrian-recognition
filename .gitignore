@@ -216,3 +216,24 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---- UPAR 2027 project ----
+# starter kit of the organizers (clone separately), datasets and derived caches
+UPAR-Challenge-2027/
+cache/
+fake_input_data/
+# training outputs, built submissions, Colab bundles
+runs/
+submissions/
+colab/*.zip
+*.pt
+*.pth
+*.npz
+# LaTeX build files
+report/*.aux
+report/*.log
+report/*.fdb_latexmk
+report/*.fls
+report/*.out
+report/*.xdv
+build.log

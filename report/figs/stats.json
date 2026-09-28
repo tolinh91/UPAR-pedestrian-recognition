@@ -1,0 +1,82 @@
+{
+ "per_attr_ba": {
+  "Age-Young": 0.857980376105132,
+  "Age-Adult": 0.839071377504542,
+  "Age-Old": 0.8851803240070734,
+  "Gender-Female": 0.955192359960725,
+  "Hair-Length-Short": 0.9171898577534158,
+  "Hair-Length-Long": 0.9339295233742467,
+  "Hair-Length-Bald": 0.8102454709694475,
+  "UpperBody-Length-Short": 0.9161608262583867,
+  "UpperBody-Color-Black": 0.9316194878268144,
+  "UpperBody-Color-Blue": 0.8948828773066587,
+  "UpperBody-Color-Brown": 0.9100108603664523,
+  "UpperBody-Color-Green": 0.933383901826044,
+  "UpperBody-Color-Grey": 0.8671829257508666,
+  "UpperBody-Color-Orange": 0.938624560814457,
+  "UpperBody-Color-Pink": 0.890094002400066,
+  "UpperBody-Color-Purple": 0.8622671746607439,
+  "UpperBody-Color-Red": 0.9602223681755525,
+  "UpperBody-Color-White": 0.9255543796074485,
+  "UpperBody-Color-Yellow": 0.9320104996322813,
+  "UpperBody-Color-Other": 0.7007162159363838,
+  "LowerBody-Length-Short": 0.9406213519279571,
+  "LowerBody-Color-Black": 0.9026630150532764,
+  "LowerBody-Color-Blue": 0.8654051002993857,
+  "LowerBody-Color-Brown": 0.9236337007694523,
+  "LowerBody-Color-Green": 0.8487502461019302,
+  "LowerBody-Color-Grey": 0.8354499982420016,
+  "LowerBody-Color-Orange": 0.9567926160524691,
+  "LowerBody-Color-Pink": 0.8461482814011484,
+  "LowerBody-Color-Purple": 0.725612768779758,
+  "LowerBody-Color-Red": 0.9448688843858595,
+  "LowerBody-Color-White": 0.9164120906343237,
+  "LowerBody-Color-Yellow": 0.889628172764854,
+  "LowerBody-Color-Other": 0.8265914246007827,
+  "LowerBody-Type-Trousers&Shorts": 0.929008130778258,
+  "LowerBody-Type-Skirt&Dress": 0.9043346663004405,
+  "Accessory-Backpack": 0.9057860782963895,
+  "Accessory-Bag": 0.8556675668513928,
+  "Accessory-Glasses-Normal": 0.7749114694119967,
+  "Accessory-Glasses-Sun": 0.6516788446849237,
+  "Accessory-Hat": 0.9021227304674578
+ },
+ "val": {
+  "mA": 0.8793171441047251,
+  "Label_F1": 0.7089316486397345,
+  "Instance_Acc": 0.8195089881878331,
+  "Instance_Prec": 0.8756694192856398,
+  "Instance_Rec": 0.9141781105140022,
+  "Instance_F1": 0.8912172527558302,
+  "Challenge_Avg": 0.8852272069491296
+ },
+ "per_ds": {
+  "Market1501": {
+   "mA": 0.8768735768739501,
+   "Label_F1": 0.7268813063717396,
+   "Instance_Acc": 0.8234245261496446,
+   "Instance_Prec": 0.8842267124120935,
+   "Instance_Rec": 0.9121516428980884,
+   "Instance_F1": 0.8952094433329149,
+   "Challenge_Avg": 0.8859466488596399
+  },
+  "PA100k": {
+   "mA": 0.8708278113587798,
+   "Label_F1": 0.6646855424806339,
+   "Instance_Acc": 0.7986427988305618,
+   "Instance_Prec": 0.8566370741215524,
+   "Instance_Rec": 0.9075853019624301,
+   "Instance_F1": 0.8777488404863943,
+   "Challenge_Avg": 0.8742746288838743
+  },
+  "PETA": {
+   "mA": 0.8902500440814455,
+   "Label_F1": 0.7352280970668297,
+   "Instance_Acc": 0.8364596395832932,
+   "Instance_Prec": 0.8861444713232736,
+   "Instance_Rec": 0.9227973866814884,
+   "Instance_F1": 0.9006934744481815,
+   "Challenge_Avg": 0.8954413101644659
+  }
+ }
+}
