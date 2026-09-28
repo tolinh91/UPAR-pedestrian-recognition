@@ -1,0 +1,36 @@
+{
+  "backbone": "vit_base_patch16_dinov3.lvd1689m",
+  "size": [
+    256,
+    128
+  ],
+  "head": "linear",
+  "head_kw": {},
+  "loss": "bce",
+  "loss_kw": {
+    "smooth": 0.05,
+    "weighting": "deepmar"
+  },
+  "epochs": 8,
+  "bs": 64,
+  "lr": 5e-05,
+  "head_lr_mult": 10.0,
+  "wd": 0.05,
+  "layer_decay": 0.75,
+  "warmup": 0.5,
+  "ema": 0.9995,
+  "amp": "auto",
+  "grad_ckpt": false,
+  "train_splits": [
+    "train",
+    "val"
+  ],
+  "holdout": null,
+  "ds_alpha": 0.5,
+  "workers": 4,
+  "prefetch": 2,
+  "out": "../runs/trainval_b16",
+  "resume": true,
+  "max_iters": 0,
+  "list": false
+}

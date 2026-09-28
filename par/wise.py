@@ -13,9 +13,9 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from data import UPARDataset, build_transforms, load_split
-from metrics import challenge_metrics, fmt
-from model import PARModel
+from upar.data import UPARDataset, build_transforms, load_split
+from upar.metrics import challenge_metrics, fmt
+from upar.models import build_model, cfg_from_checkpoint
 from train import predict
 
 
@@ -30,7 +30,8 @@ def main():
     run = Path(args.run)
     ck = torch.load(run / args.ckpt, map_location="cpu", weights_only=False)
     targs = ck["args"]
-    size = tuple(targs["size"])
+    cfg = cfg_from_checkpoint(ck)
+    size = tuple(cfg["size"])
     holdout = targs.get("holdout")
     dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
 
@@ -39,9 +40,9 @@ def main():
     ds = UPARDataset("val", build_transforms(size, False), rows=rows)
     dl = DataLoader(ds, 128, num_workers=args.workers, pin_memory=True)
 
-    pre = PARModel(targs["backbone"], img_size=size, pretrained=True).state_dict()
+    pre = build_model(cfg, pretrained=True).state_dict()
     ft = ck["model"]
-    model = PARModel(targs["backbone"], img_size=size, pretrained=False).cuda()
+    model = build_model(cfg, pretrained=False).cuda()
     res = {}
     for a in args.alphas:
         mixed = {k: (ft[k].float() if not k.startswith("backbone.") or k not in pre

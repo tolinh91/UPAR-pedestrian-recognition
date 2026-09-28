@@ -12,8 +12,8 @@ from pathlib import Path
 import numpy as np
 
 from calibrate import fit_offsets
-from data import attr_names, load_split
-from metrics import challenge_metrics
+from upar.data import attr_names, load_split
+from upar.metrics import challenge_metrics
 
 SCALES = [0.0, 0.25, 0.4, 0.5, 0.6, 0.75, 1.0]
 

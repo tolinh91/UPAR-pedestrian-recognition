@@ -13,23 +13,30 @@ Báo cáo tổng quan (bài toán, dữ liệu, metric, vấn đề cần giải
 
 | Model | Val (cùng domain) Avg | Test Avg | mA | Inst-F1 |
 |---|---|---|---|---|
-| DINOv3 ViT-B/16, 256×128, offset ×0.6 (`results/dinov3_b16_v3`) | 0.885 | **0.7774** | 0.7786 | 0.7762 |
+| DINOv3 ViT-B/16, 256×128, offset ×0.6, train (`results/dinov3_b16_v3`) | 0.885 | 0.7774 | 0.7786 | 0.7762 |
+| Như trên nhưng train trên train + val, 8 epoch (`results/dinov3_b16_trainval_v4`) | (val nằm trong train) | **0.7775** | 0.7781 | 0.7769 |
+
+Thêm val (cùng 3 domain) gần như không đổi điểm test: cải thiện tiếp phải đến từ khả năng tổng quát
+sang domain lạ hoặc năng lực model, không đến từ thêm dữ liệu cùng domain.
 
 ## Cấu trúc
 
 ```
-par/                    code train và đánh giá
-  data.py               đọc annotations, cache ảnh, augmentation, dataset
-  model.py              DINOv3 (timm) + head 40 thuộc tính, layer-wise lr decay
-  metrics.py            mA, Instance-F1, Challenge_Avg (chấm riêng từng dataset rồi lấy trung bình)
-  train.py              fine-tune: weighted BCE, EMA, --holdout (leave-one-dataset-out), --resume
+par/
+  upar/                 package dùng chung
+    registry.py         đăng ký thành phần theo tên, parse tham số K=V
+    data.py             annotations, cache ảnh, augmentation, dataset
+    metrics.py          mA, Instance-F1, Challenge_Avg (chấm riêng từng dataset rồi lấy trung bình)
+    losses.py           LOSSES: bce, logit_adj, focal, asl + tuỳ chọn chung smooth / weighting / mask
+    models/             HEADS: linear (v3), query (attention riêng từng thuộc tính) + build_model()
+  train.py              train với --loss/--head chọn theo tên, --holdout (proxy domain lạ), --resume
   calibrate.py          fit offset logit từng thuộc tính (ngưỡng 0.5 bị BTC cố định), kiểm chứng 2-fold CV
   offset_lodo.py        offset fit trên 2 dataset, chấm trên dataset thứ 3
   wise.py               WiSE-FT: nội suy trọng số pretrained ↔ fine-tuned
-  make_submission.py    đóng gói zip nộp bài (run.py + timm vendored + weights fp16 + config)
+  make_submission.py    đóng gói zip nộp bài (run.py + timm + upar.models vendored + weights fp16 + config)
   test_submission.py    giả lập ingestion trên val
   fake_ingestion.py     giả lập ingestion trong docker trên test set giả
-  docker_test.py, bench_cpu.py
+  tests/                unit test loss và head (python tests/test_components.py)
 submission_template/run.py   entry point nộp bài: tự chọn GPU/CPU, ngân sách thời gian, chống NaN/ảnh hỏng
 colab/RWS2027_colab.ipynb    notebook train trên Colab (resume khi bị ngắt)
 eda/eda_images.py            EDA ảnh
@@ -52,13 +59,21 @@ python3 -m venv .venv
 .venv/bin/pip install torch torchvision timm==1.0.30 pandas pillow matplotlib
 ```
 
-Lần chạy đầu, `par/data.py` gộp toàn bộ ảnh vào `cache/{train,val}_bytes.npz` (~0.66 GB) để DataLoader đọc nhanh.
+Thêm loss mới: viết class kế thừa `BaseLoss` trong `upar/losses.py` và gắn `@LOSSES.register("ten")`.
+Thêm head mới: class trong `upar/models/heads.py` với `@HEADS.register("ten")`, `forward(tokens, n_prefix)`.
+
+Lần chạy đầu, `par/upar/data.py` gộp toàn bộ ảnh vào `cache/{train,val}_bytes.npz` (~0.66 GB) để DataLoader đọc nhanh.
 
 ## Train, hiệu chỉnh, đóng gói
 
 ```bash
 cd par
-../.venv/bin/python train.py --out ../runs/dinov3_b16 --epochs 10                 # train trên tập train
+../.venv/bin/python train.py --list                                               # loss / head có sẵn
+../.venv/bin/python train.py --out ../runs/dinov3_b16 --epochs 10                 # công thức v3
+../.venv/bin/python train.py --loss asl --loss-kw gamma_neg=4 clip=0.05 --out ../runs/asl
+../.venv/bin/python train.py --loss logit_adj --loss-kw tau=0.5 smooth=0.05 --out ../runs/la
+../.venv/bin/python train.py --head query --head-kw n_layers=1 --out ../runs/query
+../.venv/bin/python train.py --train-splits train val --epochs 8 --out ../runs/trainval   # bản v4
 ../.venv/bin/python train.py --holdout PETA --epochs 5 --out ../runs/lodo_PETA   # proxy domain lạ
 ../.venv/bin/python calibrate.py ../runs/dinov3_b16                               # offset ngưỡng
 ../.venv/bin/python make_submission.py ../runs/dinov3_b16 --offset-scale 0.6 --name my_sub
@@ -80,7 +95,7 @@ Upload `rws2027_bundle.zip` (code + annotations + cache ảnh, tạo bằng lệ
 mở `colab/RWS2027_colab.ipynb` và chạy lần lượt các cell. Checkpoint lưu thẳng vào Drive.
 
 ```bash
-zip -0 -r colab/rws2027_bundle.zip par/*.py submission_template/run.py \
+zip -0 -r colab/rws2027_bundle.zip par/*.py par/upar submission_template/run.py \
   UPAR-Challenge-2027/data/annotations/task1 \
   UPAR-Challenge-2027/examples/task1/sample_code_submission/metadata.yaml \
   UPAR-Challenge-2027/examples/task1/sample_code_submission/assets/attribute_prior.json \

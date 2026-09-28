@@ -11,8 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
-from data import attr_names, load_split
-from metrics import challenge_metrics, fmt
+from upar.data import attr_names, load_split
+from upar.metrics import challenge_metrics, fmt
 
 GRID = np.linspace(-2.5, 2.5, 26)
 

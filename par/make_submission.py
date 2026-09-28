@@ -10,6 +10,8 @@ from pathlib import Path
 import timm
 import torch
 
+from upar.models import cfg_from_checkpoint
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -24,7 +26,7 @@ def main():
 
     run = Path(args.run)
     ck = torch.load(run / args.ckpt, map_location="cpu", weights_only=False)
-    cfg_train = ck["args"]
+    mcfg = cfg_from_checkpoint(ck)
     out = ROOT / "submissions" / args.name
     if out.exists():
         shutil.rmtree(out)
@@ -34,6 +36,12 @@ def main():
     shutil.copy(ROOT / "UPAR-Challenge-2027/examples/task1/sample_code_submission/metadata.yaml", out / "metadata.yaml")
     shutil.copytree(Path(timm.__file__).parent, out / "vendor" / "timm",
                     ignore=shutil.ignore_patterns("__pycache__"))
+    # the model code used in training, without data / losses (they need pandas, torchvision)
+    upar = Path(__file__).parent / "upar"
+    (out / "vendor" / "upar").mkdir(parents=True)
+    for f in ["__init__.py", "registry.py"]:
+        shutil.copy(upar / f, out / "vendor" / "upar" / f)
+    shutil.copytree(upar / "models", out / "vendor" / "upar" / "models", ignore=shutil.ignore_patterns("__pycache__"))
     torch.save({k: v.half() for k, v in ck["model"].items()}, out / "assets" / "model.pt")
 
     names = json.load(open(ROOT / "UPAR-Challenge-2027/examples/task1/sample_code_submission/assets/attribute_prior.json"))["attribute_names"]
@@ -42,7 +50,7 @@ def main():
         off = json.load(open(run / "offsets.json"))
         assert off["attribute_names"] == names
         offset = off["offset"]
-    cfg = {"backbone": cfg_train["backbone"], "size": cfg_train["size"], "attribute_names": names,
+    cfg = {"model": mcfg, "backbone": mcfg["backbone"], "size": mcfg["size"], "attribute_names": names,
            "offset": offset, "offset_scale": 0.0 if args.no_offset else args.offset_scale,
            "source": {"run": str(run), "ckpt": args.ckpt, "epoch": ck["epoch"], "val": ck["val"]}}
     json.dump(cfg, open(out / "assets" / "config.json", "w"), indent=1)

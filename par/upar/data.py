@@ -10,8 +10,8 @@ from PIL import Image, ImageFilter
 from torch.utils.data import Dataset
 import torchvision.transforms as T
 
-DATA = Path(__file__).resolve().parents[1] / "UPAR-Challenge-2027" / "data"
-CACHE = Path(__file__).resolve().parents[1] / "cache"
+DATA = Path(__file__).resolve().parents[2] / "UPAR-Challenge-2027" / "data"
+CACHE = Path(__file__).resolve().parents[2] / "cache"
 MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
 

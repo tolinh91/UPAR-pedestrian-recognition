@@ -11,8 +11,8 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from data import DATA, attr_names, load_split  # noqa: E402
-from metrics import challenge_metrics, fmt  # noqa: E402
+from upar.data import DATA, attr_names, load_split  # noqa: E402
+from upar.metrics import challenge_metrics, fmt  # noqa: E402
 
 
 def main():

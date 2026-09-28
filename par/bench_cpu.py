@@ -9,7 +9,7 @@ import time
 import torch
 
 sys.path.insert(0, ".")
-from data import DATA, attr_names, load_split  # noqa: E402
+from upar.data import DATA, attr_names, load_split  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("run", sys.argv[1] + "/run.py")
 run = importlib.util.module_from_spec(spec); spec.loader.exec_module(run)

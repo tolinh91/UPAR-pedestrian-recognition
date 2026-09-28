@@ -1,7 +1,7 @@
 """UPAR 2027 Track 1 submission: DINOv3 ViT + attribute head, hflip TTA, per-attribute logit offsets.
 
 The ingestion program calls load_model() once, then predict_batch(samples).
-timm is vendored in ./vendor because the evaluation image does not ship it.
+timm and upar.models (the training model code) are vendored in ./vendor: the evaluation image ships neither.
 
 The platform hides logs, so this file is defensive:
 - GPU is smoke-tested at load time; any CUDA problem falls back to CPU.
@@ -24,8 +24,7 @@ sys.path.insert(0, os.path.join(HERE, "vendor"))
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
-import torch.nn as nn  # noqa: E402
-import timm  # noqa: E402
+from upar.models import build_model  # noqa: E402  (vendored, same code as training)
 from PIL import Image, ImageFile  # noqa: E402
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -48,19 +47,6 @@ _S = {"n": 0, "t0": None, "bad": 0, "total": None, "fallback": 0, "sum": None}
 
 def log(msg):
     print(f"[run.py] {msg}", flush=True)
-
-
-class PARModel(nn.Module):
-    def __init__(self, backbone, num_attrs, img_size):
-        super().__init__()
-        self.backbone = timm.create_model(backbone, pretrained=False, num_classes=0, img_size=img_size)
-        d = self.backbone.num_features
-        self.n_prefix = getattr(self.backbone, "num_prefix_tokens", 1)
-        self.head = nn.Sequential(nn.LayerNorm(2 * d), nn.Dropout(0.0), nn.Linear(2 * d, num_attrs))
-
-    def forward(self, x):
-        t = self.backbone.forward_features(x)
-        return self.head(torch.cat([t[:, 0], t[:, self.n_prefix:].mean(1)], 1))
 
 
 def _cpu_limit():
@@ -97,7 +83,10 @@ def load_model() -> None:
     t0 = time.time()
     with open(os.path.join(HERE, "assets", "config.json"), encoding="utf-8") as fh:
         _CFG = json.load(fh)
-    model = PARModel(_CFG["backbone"], len(_CFG["attribute_names"]), tuple(_CFG["size"]))
+    # "model" holds backbone / size / head / head_kw; older configs only have backbone + size (linear head)
+    mcfg = dict(_CFG.get("model") or {"backbone": _CFG["backbone"], "size": _CFG["size"]})
+    mcfg["num_attrs"] = len(_CFG["attribute_names"])
+    model = build_model(mcfg, pretrained=False)
     state = torch.load(os.path.join(HERE, "assets", "model.pt"), map_location="cpu", weights_only=True)
     model.load_state_dict({k: v.float() for k, v in state.items()})
     model.eval()
@@ -129,7 +118,8 @@ def load_model() -> None:
     _POOL = ThreadPoolExecutor(max_workers=min(4, _cpu_limit()))
     _OFFSET = torch.tensor(_CFG["offset"], dtype=torch.float32, device=_DEVICE) * _CFG.get("offset_scale", 1.0)
     log(f"device={_DEVICE} gpu={gpu} amp={_AMP_DTYPE} tta={_TTA} threads={torch.get_num_threads()} "
-        f"cpu_limit={_cpu_limit()} host_cpus={os.cpu_count()} load={time.time() - t0:.1f}s")
+        f"cpu_limit={_cpu_limit()} host_cpus={os.cpu_count()} head={mcfg.get('head', 'linear')} "
+        f"load={time.time() - t0:.1f}s")
 
 
 def _count_images(sample):
