@@ -102,3 +102,11 @@ class AsymmetricLoss(BaseLoss):
 
 def build_loss(name, prior, **kw):
     return LOSSES.build(name, prior, **kw)
+
+
+def distill_bce(student_logits, teacher_logits, T=1.0):
+    """Knowledge distillation for multi-label outputs: BCE between the student's and the teacher's tempered
+    sigmoid, over every cell (also cells without a label in a dataset: the teacher fills them in).
+    Scaled by T^2 so the gradient size does not depend on the temperature (Hinton et al. 2015)."""
+    target = torch.sigmoid(teacher_logits.float() / T)
+    return F.binary_cross_entropy_with_logits(student_logits.float() / T, target) * T * T

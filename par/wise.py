@@ -17,6 +17,7 @@ from upar.data import UPARDataset, build_transforms, load_split
 from upar.metrics import challenge_metrics, fmt
 from upar.models import build_model, cfg_from_checkpoint
 from train import predict
+from probe_backbones import mean_auc
 
 
 def main():
@@ -37,7 +38,8 @@ def main():
 
     val = load_split("val")
     rows = None if holdout is None else np.where(val.ds.values == holdout)[0]
-    ds = UPARDataset("val", build_transforms(size, False), rows=rows)
+    norm = {k: cfg[k] for k in ("mean", "std") if cfg.get(k)}
+    ds = UPARDataset("val", build_transforms(size, False, **norm), rows=rows)
     dl = DataLoader(ds, 128, num_workers=args.workers, pin_memory=True)
 
     pre = build_model(cfg, pretrained=True).state_dict()
@@ -50,8 +52,9 @@ def main():
         model.load_state_dict(mixed)
         logits, idx = predict(model, dl, "cuda", dtype=dtype)
         m, _ = challenge_metrics(ds.labels[idx], 1 / (1 + np.exp(-logits)), ds.ds[idx])
+        m["mean_AUC"] = mean_auc(ds.labels[idx], logits, ds.labels[idx].any(0))  # threshold free
         res[a] = m
-        print(f"alpha={a:.2f} {fmt(m)}", flush=True)
+        print(f"alpha={a:.2f} AUC={m['mean_AUC']:.4f} {fmt(m)}", flush=True)
         if a == 1.0:
             np.savez(run / "holdout_logits.npz", logits=logits, idx=idx)
     json.dump({str(k): v for k, v in res.items()}, open(run / "wise.json", "w"), indent=1)

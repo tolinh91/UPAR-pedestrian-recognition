@@ -79,6 +79,45 @@ def test_linear_head_keeps_v3_parameter_names():
     assert names == ["0.weight", "0.bias", "2.weight", "2.bias"]
 
 
+def test_distillation_loss():
+    from upar.losses import distill_bce
+    t = torch.randn(B, A)
+    s = t.clone().requires_grad_(True)
+    same = distill_bce(s, t)
+    other = distill_bce(torch.zeros(B, A), t)
+    assert same < other  # student equal to teacher is the minimum
+    same.backward()
+    assert torch.allclose(s.grad, torch.zeros_like(s.grad), atol=1e-6)  # zero gradient at the optimum
+    # T^2 scaling keeps the loss magnitude comparable across temperatures
+    z = torch.randn(B, A)
+    assert 0.2 < distill_bce(z, t, T=2.0) / distill_bce(z, t, T=1.0) < 5
+
+
+def test_radio_copy_is_independent():
+    """The EMA is a deepcopy: it must compute with its own weights (closures would keep the original's)."""
+    import copy
+    from upar.models import build_model
+    torch.manual_seed(0)
+    m = build_model({"backbone": "nvidia/C-RADIOv3-B", "size": [64, 32]}, pretrained=False).eval()
+    c = copy.deepcopy(m)
+    x = torch.randn(2, 3, 64, 32)
+    with torch.no_grad():
+        before = c(x)
+        for p in m.parameters():
+            p.add_(torch.randn_like(p))
+        assert torch.equal(c(x), before)
+        assert not torch.allclose(m(x), before)
+    # train mode uses the eval position embedding (no random CPE crop): equal once dropout / drop path are off
+    for mod in c.modules():
+        if isinstance(mod, torch.nn.Dropout):
+            mod.p = 0.0
+    c.backbone.patch_generator.pos_dropout = 0.0
+    for b in c.backbone.blocks:
+        b.drop_path1 = b.drop_path2 = torch.nn.Identity()
+    with torch.no_grad():
+        assert torch.allclose(c.train()(x), before, atol=1e-5)
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):

@@ -31,7 +31,8 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.MAX_IMAGE_PIXELS = None
 
 BATCH_SIZE = 64
-BUDGET_S = float(os.environ.get("UPAR_BUDGET_S", 2700))  # platform limit is 3600 s for the whole run
+# platform limit is 3600 s; the ingestion clock and ours agree within a few seconds (server log, 29,248 images)
+BUDGET_S = float(os.environ.get("UPAR_BUDGET_S", 3200))
 MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
@@ -42,7 +43,7 @@ _DEVICE = "cpu"
 _AMP_DTYPE = None
 _TTA = True
 _POOL = None
-_S = {"n": 0, "t0": None, "bad": 0, "total": None, "fallback": 0, "sum": None}
+_S = {"n": 0, "t0": None, "bad": 0, "total": None, "fallback": 0, "sum": None, "int8": False}
 
 
 def log(msg):
@@ -78,14 +79,49 @@ def _forward(x):
     return logit
 
 
+def _gpu_diagnostics():
+    """Why CUDA is (not) usable here: logged once, since the platform shows no other hardware information."""
+    import glob
+    import subprocess
+    import warnings
+    info = {"torch": torch.__version__, "torch_cuda": torch.version.cuda,
+            "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            "NVIDIA_VISIBLE_DEVICES": os.environ.get("NVIDIA_VISIBLE_DEVICES"),
+            "dev_nvidia": sorted(glob.glob("/dev/nvidia*"))[:6]}
+    try:
+        info["driver"] = open("/proc/driver/nvidia/version").readline().strip()[:120]
+    except Exception:
+        info["driver"] = None
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"],
+                             capture_output=True, text=True, timeout=10)
+        info["nvidia_smi"] = (out.stdout or out.stderr).strip()[:200]
+    except Exception as e:
+        info["nvidia_smi"] = repr(e)[:120]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        info["is_available"] = torch.cuda.is_available()
+        info["device_count"] = torch.cuda.device_count() if info["is_available"] else 0
+    info["cuda_warnings"] = [str(w.message)[:200] for w in caught]
+    log(f"gpu diagnostics: {json.dumps(info)}")
+
+
 def load_model() -> None:
     global _MODEL, _CFG, _OFFSET, _AMP_DTYPE, _TTA, _POOL, _DEVICE
     t0 = time.time()
+    try:
+        _gpu_diagnostics()
+    except Exception as e:  # diagnostics must never break the run
+        log(f"gpu diagnostics failed: {e!r}")
     with open(os.path.join(HERE, "assets", "config.json"), encoding="utf-8") as fh:
         _CFG = json.load(fh)
     # "model" holds backbone / size / head / head_kw; older configs only have backbone + size (linear head)
     mcfg = dict(_CFG.get("model") or {"backbone": _CFG["backbone"], "size": _CFG["size"]})
     mcfg["num_attrs"] = len(_CFG["attribute_names"])
+    global MEAN, STD  # normalisation of the backbone's pretraining; ImageNet when not stored (DINOv3 checkpoints)
+    if mcfg.get("mean") and mcfg.get("std"):
+        MEAN = torch.tensor(mcfg["mean"], dtype=torch.float32).view(1, 3, 1, 1)
+        STD = torch.tensor(mcfg["std"], dtype=torch.float32).view(1, 3, 1, 1)
     model = build_model(mcfg, pretrained=False)
     state = torch.load(os.path.join(HERE, "assets", "model.pt"), map_location="cpu", weights_only=True)
     model.load_state_dict({k: v.float() for k, v in state.items()})
@@ -115,10 +151,25 @@ def load_model() -> None:
         _MODEL = model
         torch.set_num_threads(_cpu_limit())
         _TTA = _CFG.get("tta_cpu", False)
+        mode = os.environ.get("UPAR_CPU_INT8", str(_CFG.get("cpu_int8", "0")))
+        if mode in ("1", "all"):
+            # every Linear: fastest, but destroys DINOv3 accuracy (val Avg 0.885 -> 0.703), kept for reference
+            _MODEL = torch.ao.quantization.quantize_dynamic(_MODEL, {torch.nn.Linear}, dtype=torch.qint8)
+            _S["int8"] = "all"
+        elif mode == "partial":
+            # only layers fed by LayerNorm (qkv, fc1): still loses too much (val Avg 0.885 -> 0.809). Default: off
+            names = {n: torch.ao.quantization.default_dynamic_qconfig for n, m in _MODEL.named_modules()
+                     if isinstance(m, torch.nn.Linear) and n.endswith(("qkv", "fc1"))}
+            _MODEL = torch.ao.quantization.quantize_dynamic(_MODEL, names, dtype=torch.qint8)
+            _S["int8"] = "partial"
     _POOL = ThreadPoolExecutor(max_workers=min(4, _cpu_limit()))
+    global BUDGET_S  # a config may override the time budget (null = no budget: run every image)
+    if "budget_s" in _CFG and "UPAR_BUDGET_S" not in os.environ:
+        BUDGET_S = float("inf") if _CFG["budget_s"] is None else float(_CFG["budget_s"])
     _OFFSET = torch.tensor(_CFG["offset"], dtype=torch.float32, device=_DEVICE) * _CFG.get("offset_scale", 1.0)
     log(f"device={_DEVICE} gpu={gpu} amp={_AMP_DTYPE} tta={_TTA} threads={torch.get_num_threads()} "
-        f"cpu_limit={_cpu_limit()} host_cpus={os.cpu_count()} head={mcfg.get('head', 'linear')} "
+        f"cpu_limit={_cpu_limit()} host_cpus={os.cpu_count()} head={mcfg.get('head', 'linear')} backbone={mcfg.get('backbone')} mean={MEAN.flatten().tolist()} "
+        f"int8={_S['int8']} "
         f"load={time.time() - t0:.1f}s")
 
 

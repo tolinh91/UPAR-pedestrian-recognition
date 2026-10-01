@@ -68,10 +68,65 @@ class RandomBlur:
         return img.filter(ImageFilter.GaussianBlur(random.uniform(0.3, 1.5))) if random.random() < self.p else img
 
 
-def build_transforms(size, train):
+class RandomJPEG:
+    """Re-encode with a random JPEG quality: surveillance crops are compressed, often heavily."""
+
+    def __init__(self, p=0.5, quality=(30, 90)):
+        self.p, self.quality = p, quality
+
+    def __call__(self, img):
+        if random.random() > self.p:
+            return img
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=random.randint(*self.quality))
+        return Image.open(io.BytesIO(buf.getvalue())).convert("RGB")
+
+
+class RandomWhiteBalance:
+    """Per-channel gain and gamma: camera colour cast / exposure without changing hue ordering much."""
+
+    def __init__(self, p=0.3, gain=0.1, gamma=(0.8, 1.25)):
+        self.p, self.gain, self.gamma = p, gain, gamma
+
+    def __call__(self, x):  # tensor in [0, 1]
+        if random.random() > self.p:
+            return x
+        g = 1 + (torch.rand(3, 1, 1) * 2 - 1) * self.gain
+        return (x * g).clamp(0, 1) ** random.uniform(*self.gamma)
+
+
+class RandomNoise:
+    def __init__(self, p=0.2, sigma=(0.01, 0.04)):
+        self.p, self.sigma = p, sigma
+
+    def __call__(self, x):
+        if random.random() > self.p:
+            return x
+        return (x + torch.randn_like(x) * random.uniform(*self.sigma)).clamp(0, 1)
+
+
+def build_transforms(size, train, mean=MEAN, std=STD, aug="base"):
+    """mean / std must match the backbone's pretraining (ImageNet for DINOv3, 0.5 for PE-Core / SigLIP)."""
     h, w = size
     if not train:
-        return T.Compose([T.Resize((h, w)), T.ToTensor(), T.Normalize(MEAN, STD)])
+        return T.Compose([T.Resize((h, w)), T.ToTensor(), T.Normalize(mean, std)])
+    if aug == "strong":
+        # camera / capture shift: resolution, compression, framing, viewpoint, occlusion, colour cast. No hue change.
+        return T.Compose([
+            RandomLowRes(p=0.5, min_scale=0.2),
+            RandomJPEG(p=0.5, quality=(30, 90)),
+            T.RandomResizedCrop((h, w), scale=(0.8, 1.0), ratio=(w / h * 0.8, w / h * 1.25), antialias=True),
+            T.RandomHorizontalFlip(),
+            T.RandomApply([T.RandomAffine(degrees=8, translate=(0.05, 0.05))], p=0.3),
+            T.RandomPerspective(distortion_scale=0.15, p=0.2),
+            T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.3),
+            RandomBlur(p=0.2),
+            T.ToTensor(),
+            RandomWhiteBalance(p=0.3),
+            RandomNoise(p=0.2),
+            T.Normalize(mean, std),
+            T.RandomErasing(p=0.5, scale=(0.02, 0.25), value="random"),
+        ])
     return T.Compose([
         RandomLowRes(),
         T.Resize((h, w)),
@@ -82,7 +137,7 @@ def build_transforms(size, train):
         T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
         RandomBlur(),
         T.ToTensor(),
-        T.Normalize(MEAN, STD),
+        T.Normalize(mean, std),
         T.RandomErasing(p=0.3, scale=(0.02, 0.15), value="random"),
     ])
 

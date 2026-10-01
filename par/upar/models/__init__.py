@@ -9,6 +9,7 @@ import timm
 import torch.nn as nn
 
 from .heads import HEADS
+from .radio import create_radio, is_radio
 
 DEFAULT_BACKBONE = "vit_base_patch16_dinov3.lvd1689m"
 
@@ -17,13 +18,29 @@ class PARModel(nn.Module):
     def __init__(self, backbone=DEFAULT_BACKBONE, num_attrs=40, img_size=(256, 128), pretrained=True,
                  head="linear", head_kw=None, drop_path=0.1):
         super().__init__()
-        self.backbone = timm.create_model(backbone, pretrained=pretrained, num_classes=0, img_size=tuple(img_size),
-                                          drop_path_rate=drop_path)
+        if is_radio(backbone):  # NVIDIA C-RADIO: timm ViT + vendored patch generator, weights from Hugging Face
+            self.backbone = create_radio(backbone, tuple(img_size), drop_path, pretrained=pretrained)
+        else:
+            self.backbone = timm.create_model(backbone, pretrained=pretrained, num_classes=0, img_size=tuple(img_size),
+                                              drop_path_rate=drop_path)
         self.n_prefix = getattr(self.backbone, "num_prefix_tokens", 1)
         self.head = HEADS.build(head, self.backbone.num_features, num_attrs, **(head_kw or {}))
 
     def forward(self, x):
         return self.head(self.backbone.forward_features(x), self.n_prefix)
+
+    def freeze_early(self, n_blocks):
+        """Freeze everything before block n_blocks (patch embed, cls / register tokens, rope, first blocks)."""
+        n = 0
+        for name, p in self.backbone.named_parameters():
+            if name.startswith("blocks."):
+                if int(name.split(".")[1]) >= n_blocks:
+                    continue
+            elif name.startswith(("norm", "fc_norm", "head")):
+                continue
+            p.requires_grad_(False)
+            n += p.numel()
+        return n
 
     def param_groups(self, lr, weight_decay, layer_decay, head_lr_mult=10.0):
         """Layer-wise lr decay: the last backbone block gets lr, each block below x layer_decay, head x head_lr_mult."""

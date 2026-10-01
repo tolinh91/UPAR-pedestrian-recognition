@@ -237,3 +237,6 @@ report/*.fls
 report/*.out
 report/*.xdv
 build.log
+# NVIDIA C-RADIO source files, downloaded from Hugging Face on first use (NVIDIA license)
+par/upar/models/radio_nv/*.py
+!par/upar/models/radio_nv/__init__.py

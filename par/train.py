@@ -17,15 +17,17 @@ import time
 from pathlib import Path
 
 import numpy as np
+import timm
 import torch
 from timm.utils import ModelEmaV3
 from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
 from upar.data import UPARDataset, build_transforms, invalid_mask, load_split
-from upar.losses import LOSSES, build_loss
+from upar.losses import LOSSES, build_loss, distill_bce
 from upar.metrics import challenge_metrics, fmt
-from upar.models import HEADS, build_model
+from upar.models import HEADS, build_model, cfg_from_checkpoint
 from upar.registry import parse_kv
+from upar.safety import guard
 
 
 def get_args(argv=None):
@@ -39,6 +41,10 @@ def get_args(argv=None):
     g.add_argument("--loss", default="bce", help=f"one of {LOSSES.names()}")
     g.add_argument("--loss-kw", nargs="*", default=["smooth=0.05", "weighting=deepmar"], metavar="K=V",
                    help="shared: smooth, weighting (none|deepmar|sqrt|inverse), max_weight; plus loss-specific")
+    g = ap.add_argument_group("distillation")
+    g.add_argument("--teacher", default=None, help="teacher checkpoint (best.pt / last.pt of a bigger model)")
+    g.add_argument("--kd-alpha", type=float, default=0.5, help="loss = (1-a) * label loss + a * distillation loss")
+    g.add_argument("--kd-T", type=float, default=1.0, help="distillation temperature")
     g = ap.add_argument_group("optimisation")
     g.add_argument("--epochs", type=int, default=10)
     g.add_argument("--bs", type=int, default=64)
@@ -51,15 +57,21 @@ def get_args(argv=None):
     g.add_argument("--amp", default="auto", choices=["auto", "bf16", "fp16"],
                    help="auto: bf16 on Ampere+ (A100, L4), fp16 + GradScaler on older GPUs (T4, V100)")
     g.add_argument("--grad-ckpt", action="store_true")
+    g.add_argument("--freeze-blocks", type=int, default=0,
+                   help="freeze patch embedding + the first N blocks (their layer-decayed lr is already ~0)")
     g = ap.add_argument_group("data")
     g.add_argument("--train-splits", nargs="+", default=["train"])
     g.add_argument("--holdout", default=None, help="dataset left out of training; val is scored on it only")
+    g.add_argument("--aug", default="base", choices=["base", "strong"], help="training augmentation strength")
     g.add_argument("--ds-alpha", type=float, default=0.5, help="dataset sampling ~ N^alpha (0 = equal)")
     g.add_argument("--workers", type=int, default=min(12, os.cpu_count() or 2))
     g.add_argument("--prefetch", type=int, default=4, help="batches prefetched per worker (lower = less RAM)")
     g = ap.add_argument_group("run")
     g.add_argument("--out", default="../runs/base")
     g.add_argument("--resume", action="store_true", help="continue from <out>/state.pt if it exists")
+    g.add_argument("--compile", action="store_true", help="torch.compile the training forward/backward (~+20%% img/s)")
+    g.add_argument("--patience", type=int, default=0,
+                   help="early stopping: stop after N epochs without a better val Challenge_Avg (0 = off)")
     g.add_argument("--max-iters", type=int, default=0, help="smoke test: stop each epoch after N iterations")
     g.add_argument("--list", action="store_true", help="print registered losses and heads and exit")
     args = ap.parse_args(argv)
@@ -69,7 +81,8 @@ def get_args(argv=None):
 
 def model_cfg(args):
     """What is needed to rebuild the network (stored in checkpoints, read by make_submission / wise)."""
-    return {"backbone": args.backbone, "size": list(args.size), "head": args.head, "head_kw": args.head_kw}
+    return {"backbone": args.backbone, "size": list(args.size), "head": args.head, "head_kw": args.head_kw,
+            "mean": getattr(args, "mean", None), "std": getattr(args, "std", None)}
 
 
 # ---------------------------------------------------------------- data
@@ -82,7 +95,8 @@ def build_data(args):
         return np.where((load_split(split).ds.values != args.holdout) == keep)[0]
 
     inv = invalid_mask(load_split("train"))
-    train_sets = [UPARDataset(s, build_transforms(size, True), inv, rows=rows(s, True)) for s in args.train_splits]
+    norm = dict(mean=args.mean, std=args.std)
+    train_sets = [UPARDataset(s, build_transforms(size, True, aug=args.aug, **norm), inv, rows=rows(s, True)) for s in args.train_splits]
     weights = np.concatenate([d.sample_weights(args.ds_alpha) for d in train_sets])
     sampler = WeightedRandomSampler(weights, sum(len(d) for d in train_sets), replacement=True)
     train_dl = DataLoader(ConcatDataset(train_sets), args.bs, sampler=sampler, num_workers=args.workers,
@@ -91,7 +105,7 @@ def build_data(args):
     val_rows = rows("val", False)
     if args.max_iters:
         val_rows = (np.arange(len(load_split("val"))) if val_rows is None else val_rows)[::50]
-    val_ds = UPARDataset("val", build_transforms(size, False), rows=val_rows)
+    val_ds = UPARDataset("val", build_transforms(size, False, **norm), rows=val_rows)
     val_dl = DataLoader(val_ds, 128, num_workers=args.workers, pin_memory=True)
 
     labels = np.concatenate([d.labels[d.idx] for d in train_sets])
@@ -131,25 +145,51 @@ class CosineWithWarmup:
             g["lr"] = g["base_lr"] * s
 
 
-def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, dtype, step):
-    model.train(); t0 = time.time(); run = 0.0
+def load_teacher(path, student_cfg):
+    """Frozen teacher in eval mode; it must see exactly the student's input tensor (same size and normalisation)."""
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    tcfg = cfg_from_checkpoint(ck)
+    for k in ("size", "mean", "std"):
+        a, b = tcfg.get(k), student_cfg.get(k)
+        if a is not None and b is not None and list(a) != list(b):
+            raise ValueError(f"teacher {k}={a} differs from student {k}={b}")
+    teacher = build_model(tcfg, pretrained=False)
+    teacher.load_state_dict(ck["model"])
+    for p in teacher.parameters():
+        p.requires_grad_(False)
+    print(f"teacher {tcfg['backbone']} from {path} (epoch {ck.get('epoch')}, val {ck.get('val', {}).get('Challenge_Avg')})",
+          flush=True)
+    teacher = teacher.cuda().eval()
+    if torch.cuda.get_device_capability()[0] >= 8:
+        teacher = teacher.to(torch.bfloat16)  # inference only: half the memory, next to the student on one GPU
+    return teacher
+
+
+def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, dtype, step, teacher=None):
+    model.train(); t0 = time.time(); run = torch.zeros((), device="cuda")
     for it, (x, y, v, _) in enumerate(loader):
         if args.max_iters and it >= args.max_iters:
             break
+        if it % 50 == 0:
+            guard()
         sched.set(step)
         x, y, v = x.cuda(non_blocking=True), y.cuda(non_blocking=True), v.cuda(non_blocking=True)
         with torch.autocast("cuda", dtype=dtype):
             logits = model(x)
         loss = loss_fn(logits.float(), y, v)
+        if teacher is not None:
+            with torch.no_grad(), torch.autocast("cuda", dtype=dtype):
+                t_logits = teacher(x.to(next(teacher.parameters()).dtype)).float()
+            loss = (1 - args.kd_alpha) * loss + args.kd_alpha * distill_bce(logits, t_logits, args.kd_T)
         opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         scaler.step(opt); scaler.update()
         ema.update(model, step=step); step += 1
-        run += loss.item()
+        run += loss.detach()  # no .item() per step: it would make the CPU wait for the GPU
         if it % 200 == 0:
-            print(f"ep {ep} it {it}/{len(loader)} loss {run / (it + 1):.4f} lr {opt.param_groups[-1]['lr']:.2e} "
+            print(f"ep {ep} it {it}/{len(loader)} loss {run.item() / (it + 1):.4f} lr {opt.param_groups[-1]['lr']:.2e} "
                   f"{(it + 1) * args.bs / (time.time() - t0):.0f} img/s", flush=True)
     return step
 
@@ -177,38 +217,52 @@ def main():
     print(f"GPU {torch.cuda.get_device_name(0)}, amp {args.amp}, workers {args.workers}, "
           f"head {args.head} {args.head_kw}, loss {args.loss} {args.loss_kw}", flush=True)
 
-    train_dl, val_ds, val_dl, prior = build_data(args)
     model = build_model(model_cfg(args)).cuda()
+    dcfg = timm.data.resolve_data_config({}, model=model.backbone)  # input normalisation of the pretraining
+    args.mean, args.std = list(dcfg["mean"]), list(dcfg["std"])
+    print(f"input normalisation mean {args.mean} std {args.std}", flush=True)
+    train_dl, val_ds, val_dl, prior = build_data(args)
+    teacher = load_teacher(args.teacher, model_cfg(args)) if args.teacher else None
+    if args.freeze_blocks:
+        n_frozen = model.freeze_early(args.freeze_blocks)
+        print(f"frozen patch embed + {args.freeze_blocks} blocks: {n_frozen / 1e6:.0f}M params", flush=True)
     if args.grad_ckpt:
         model.backbone.set_grad_checkpointing(True)
     loss_fn = build_loss(args.loss, prior, **args.loss_kw).cuda()
     ema = ModelEmaV3(model, decay=args.ema)
-    opt = torch.optim.AdamW(model.param_groups(args.lr, args.wd, args.layer_decay, args.head_lr_mult))
+    if args.compile:  # in place: parameter names, EMA and checkpoints are unchanged
+        model.compile()
+    opt = torch.optim.AdamW(model.param_groups(args.lr, args.wd, args.layer_decay, args.head_lr_mult), fused=True)
     sched = CosineWithWarmup(opt, args.epochs * len(train_dl), int(args.warmup * len(train_dl)))
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp == "fp16")
 
-    best, step, start = -1.0, 0, 0
+    best, step, start, stale = -1.0, 0, 0, 0
     if args.resume and (out / "state.pt").exists():
         st = torch.load(out / "state.pt", map_location="cpu", weights_only=False)
         model.load_state_dict(st["model"]); ema.module.load_state_dict(st["ema"])
         opt.load_state_dict(st["opt"]); scaler.load_state_dict(st["scaler"])
-        best, step, start = st["best"], st["step"], st["epoch"] + 1
-        print(f"resumed from epoch {st['epoch']} (best {best:.4f})", flush=True)
+        best, step, start, stale = st["best"], st["step"], st["epoch"] + 1, st.get("stale", 0)
+        print(f"resumed from epoch {st['epoch']} (best {best:.4f}, {stale} epoch(s) without improvement)", flush=True)
 
     for ep in range(start, args.epochs):
         t0 = time.time()
-        step = train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, train_dl, args, dtype, step)
+        step = train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, train_dl, args, dtype, step, teacher)
         m, logits, idx = evaluate(ep, ema.module, val_ds, val_dl, dtype, t0)
         ck = {"model": ema.module.state_dict(), "model_cfg": model_cfg(args), "args": vars(args), "epoch": ep, "val": m}
         torch.save(ck, out / "last.pt")
         if m["Challenge_Avg"] > best:
-            best = m["Challenge_Avg"]
+            best, stale = m["Challenge_Avg"], 0
             torch.save(ck, out / "best.pt")
             np.savez(out / "val_logits.npz", logits=logits, idx=idx)
+        else:
+            stale += 1
         if args.resume:  # full state so an interrupted Colab session can continue
             torch.save({"model": model.state_dict(), "ema": ema.module.state_dict(), "opt": opt.state_dict(),
-                        "scaler": scaler.state_dict(), "epoch": ep, "step": step, "best": best}, out / "state.pt.tmp")
+                        "scaler": scaler.state_dict(), "epoch": ep, "step": step, "best": best, "stale": stale}, out / "state.pt.tmp")
             os.replace(out / "state.pt.tmp", out / "state.pt")
+        if args.patience and stale >= args.patience:
+            print(f"early stopping: no improvement for {stale} epochs (best {best:.4f})", flush=True)
+            break
     print("best val Challenge_Avg", best)
 
 
