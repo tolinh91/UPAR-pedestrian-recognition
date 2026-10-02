@@ -44,7 +44,7 @@ class MixStyleHook:
 
 class PARModel(nn.Module):
     def __init__(self, backbone=DEFAULT_BACKBONE, num_attrs=40, img_size=(256, 128), pretrained=True,
-                 head="linear", head_kw=None, drop_path=0.1, multi_layer=0, mixstyle=None):
+                 head="linear", head_kw=None, drop_path=0.1, multi_layer=0, mixstyle=None, keep_blocks=0):
         super().__init__()
         if is_radio(backbone):  # NVIDIA C-RADIO: timm ViT + vendored patch generator, weights from Hugging Face
             self.backbone = create_radio(backbone, tuple(img_size), drop_path, pretrained=pretrained)
@@ -54,6 +54,8 @@ class PARModel(nn.Module):
                 self.backbone = timm.create_model(backbone, img_size=tuple(img_size), **kw)
             except TypeError:
                 self.backbone = timm.create_model(backbone, **kw)
+        if keep_blocks and hasattr(self.backbone, "blocks"):  # truncated backbone: first N blocks, cheaper on CPU
+            self.backbone.blocks = self.backbone.blocks[:keep_blocks]
         # CNN (ConvNeXt, ...): feature map (B, C, H, W) -> tokens [global mean ; H*W cells], one prefix token
         self.is_cnn = not hasattr(self.backbone, "blocks")
         if self.is_cnn and (multi_layer > 1 or mixstyle):
@@ -157,7 +159,7 @@ def build_model(cfg, pretrained=True):
     """cfg: dict with backbone, size and optional head / head_kw / num_attrs (train args or submission config)."""
     return PARModel(cfg.get("backbone", DEFAULT_BACKBONE), cfg.get("num_attrs", 40), cfg.get("size", (256, 128)),
                     pretrained=pretrained, head=cfg.get("head", "linear"), head_kw=cfg.get("head_kw") or {},
-                    multi_layer=cfg.get("multi_layer", 0), mixstyle=cfg.get("mixstyle"))
+                    multi_layer=cfg.get("multi_layer", 0), mixstyle=cfg.get("mixstyle"), keep_blocks=cfg.get("keep_blocks", 0))
 
 
 def cfg_from_checkpoint(ck):

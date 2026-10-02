@@ -236,6 +236,27 @@ def test_query_attention_priors():
         assert torch.allclose(plain(tokens, 5), biased(tokens, 5), atol=1e-5)
 
 
+def test_efficient_attention_heads_and_truncated_backbone():
+    """Linear and sigmoid attention query heads train; a truncated ViT keeps only the first blocks."""
+    for kind in ("linear", "sigmoid"):
+        h = HEADS.build("query", D, A, n_heads=4, attn_type=kind).train()
+        out = h(torch.randn(2, 5 + 128, D), 5)
+        out.sum().backward()
+        assert out.shape == (2, A) and torch.isfinite(out).all() and h.queries.grad.abs().sum() > 0, kind
+    from upar.models import build_model
+    m = build_model({"backbone": "vit_small_patch16_224", "size": [64, 32], "keep_blocks": 5}, pretrained=False)
+    assert len(m.backbone.blocks) == 5 and m(torch.randn(2, 3, 64, 32)).shape == (2, A)
+
+
+def test_pca_spotlight_bias():
+    """fg_bias="pca" trains and its spotlight follows the token direction that separates two token groups."""
+    torch.manual_seed(0)
+    h = HEADS.build("query", D, A, n_heads=4, fg_bias="pca").train()
+    out = h(torch.randn(2, 5 + 128, D), 5)
+    out.sum().backward()
+    assert out.shape == (2, A) and torch.isfinite(out).all() and h.fg_w.grad.abs().sum() > 0
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):

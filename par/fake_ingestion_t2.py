@@ -12,8 +12,8 @@ paths = [l.strip() for l in open(f"{root}/images.csv") if l.strip()]
 gallery = [{"index": i, "image": p, "image_path": f"{root}/images/{p}"} for i, p in enumerate(paths)]
 run.load_model()
 out = run.rank_gallery({"attribute_names": names, "queries": queries, "gallery": gallery})
-assert list(out) == ["similarities"], out.keys()
-sim = np.asarray(out["similarities"])
+assert list(out) == ["distances"], out.keys()
+sim = -np.asarray(out["distances"])
 assert sim.shape == (len(queries), len(gallery)) and np.isfinite(sim).all(), sim.shape
 np.save("/app/output/sim.npy", sim)
 print(f"INGESTION OK {sim.shape} in {time.time() - t0:.1f}s")

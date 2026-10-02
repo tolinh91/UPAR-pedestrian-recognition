@@ -39,6 +39,7 @@ def get_args(argv=None):
     g.add_argument("--head-kw", nargs="*", default=[], metavar="K=V")
     g.add_argument("--ds-heads", action="store_true",
                    help="one classifier per source dataset (own labelling convention); inference averages them")
+    g.add_argument("--keep-blocks", type=int, default=0, help="use only the first N backbone blocks (0 = all)")
     g.add_argument("--multi-layer", type=int, default=0, help="head reads a learned mix of the last N blocks' tokens")
     g.add_argument("--mixstyle-block", type=int, default=-1, help="MixStyle on the tokens after this block (-1 = off)")
     g.add_argument("--mixstyle-p", type=float, default=0.5)
@@ -84,6 +85,7 @@ def get_args(argv=None):
     g = ap.add_argument_group("run")
     g.add_argument("--out", default="../runs/base")
     g.add_argument("--resume", action="store_true", help="continue from <out>/state.pt if it exists")
+    g.add_argument("--seed", type=int, default=0, help="random seed (0 = not set)")
     g.add_argument("--compile", action="store_true", help="torch.compile the training forward/backward (~+20%% img/s)")
     g.add_argument("--patience", type=int, default=0,
                    help="early stopping: stop after N epochs without a better val Challenge_Avg (0 = off)")
@@ -100,7 +102,7 @@ def model_cfg(args):
         if getattr(args, "mixstyle_block", -1) >= 0 else None
     return {"backbone": args.backbone, "size": list(args.size), "head": args.head, "head_kw": args.head_kw,
             "mean": getattr(args, "mean", None), "std": getattr(args, "std", None),
-            "multi_layer": getattr(args, "multi_layer", 0), "mixstyle": mix}
+            "multi_layer": getattr(args, "multi_layer", 0), "mixstyle": mix, "keep_blocks": getattr(args, "keep_blocks", 0)}
 
 
 # ---------------------------------------------------------------- data
@@ -246,6 +248,9 @@ def main():
     if args.list:
         print("losses:", LOSSES.names()); print("heads:", HEADS.names()); return
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
+    if args.seed:
+        import random
+        random.seed(args.seed); np.random.seed(args.seed); torch.manual_seed(args.seed)
     json.dump(vars(args), open(out / "args.json", "w"), indent=2)
     torch.backends.cuda.matmul.allow_tf32 = True
     if args.amp == "auto":

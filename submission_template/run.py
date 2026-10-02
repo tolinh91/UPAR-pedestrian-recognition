@@ -275,7 +275,8 @@ def predict_image(sample: dict) -> list[float]:
 
 @torch.no_grad()
 def rank_gallery(sample: dict) -> dict:
-    """{"similarities": (Q, G)} = sum_k q_k log p_k + (1 - q_k) log(1 - p_k), larger = better match."""
+    """{"distances": (Q, G)} = -(sum_k q_k log p_k + (1 - q_k) log(1 - p_k)), smaller = better match (the key the
+    official sample submission returns)."""
     if _MODEL is None:
         load_model()
     gallery, names = sample["gallery"], sample["attribute_names"]
@@ -289,5 +290,5 @@ def rank_gallery(sample: dict) -> dict:
     lp, lq = np.log(p), np.log1p(-p)
     sim = queries @ (lp - lq).T + lq.sum(1)[None, :]
     sim = np.nan_to_num(sim, nan=-1e6, posinf=1e6, neginf=-1e6).astype(np.float32)
-    log(f"similarities {sim.shape}, {time.time() - T_IMPORT:.0f}s since import, fallback={_S['fallback']}")
-    return {"similarities": sim}
+    log(f"distances {sim.shape}, {time.time() - T_IMPORT:.0f}s since import, fallback={_S['fallback']}")
+    return {"distances": -sim}

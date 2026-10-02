@@ -88,6 +88,40 @@ def body_prior(grid, num_attrs, sigma=0.18):
     return out.reshape(num_attrs, H * W)
 
 
+class EfficientCrossAttention(nn.Module):
+    """Cross-attention of the attribute queries over the tokens without the softmax over tokens.
+
+    linear:  out_i = phi(q_i)^T (sum_j phi(k_j) v_j^T) / (phi(q_i)^T sum_j phi(k_j)), phi = elu + 1 (Katharopoulos et
+             al. 2020). Cost linear in the number of tokens; weights are positive but less peaked than a softmax.
+    sigmoid: out_i = sum_j sigmoid(q_i.k_j / sqrt(d) - log n) v_j (Ramapuram et al. 2024). Every token is gated
+             independently, so a query can take several regions at full weight instead of sharing one unit of mass.
+    Same call convention as nn.MultiheadAttention(batch_first=True) for the parts QueryHead uses."""
+
+    def __init__(self, dim, n_heads, kind="linear", drop=0.0):
+        super().__init__()
+        self.h, self.kind, self.d = n_heads, kind, dim // n_heads
+        self.q, self.k, self.v, self.o = (nn.Linear(dim, dim) for _ in range(4))
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, query, key, value, need_weights=False, attn_mask=None):
+        B, A, D = query.shape
+        N = key.shape[1]
+        q = self.q(query).view(B, A, self.h, self.d).transpose(1, 2)          # (B, h, A, d)
+        k = self.k(key).view(B, N, self.h, self.d).transpose(1, 2)            # (B, h, N, d)
+        v = self.v(value).view(B, N, self.h, self.d).transpose(1, 2)
+        if self.kind == "linear":
+            q, k = nn.functional.elu(q) + 1, nn.functional.elu(k) + 1
+            kv = k.transpose(-2, -1) @ v                                       # (B, h, d, d)
+            z = 1 / (q @ k.sum(2, keepdim=True).transpose(-2, -1) + 1e-6)      # (B, h, A, 1)
+            out = (q @ kv) * z
+        else:
+            logits = q @ k.transpose(-2, -1) / self.d ** 0.5 - torch.log(torch.tensor(float(N)))
+            if attn_mask is not None:
+                logits = logits + attn_mask.view(B, self.h, A, N)
+            out = self.drop(torch.sigmoid(logits)) @ v
+        return self.o(out.transpose(1, 2).reshape(B, A, D)), None
+
+
 @HEADS.register("query")
 class QueryHead(nn.Module):
     supports_q = True  # forward(..., return_q=True) also returns the attribute embeddings (training-only decoders)
@@ -100,13 +134,14 @@ class QueryHead(nn.Module):
 
     def __init__(self, dim, num_attrs, n_layers=1, n_heads=8, drop=0.1, mlp_ratio=2.0, self_attn=False,
                  n_domains=1, avg_domains=None, moe_experts=0, moe_topk=2, moe_where="tokens",
-                 spatial_prior=False, fg_bias=False, grid=None):
+                 spatial_prior=False, fg_bias=False, grid=None, attn_type="softmax"):
         super().__init__()
         # attention selectivity: a learnable body-part prior per attribute query and / or a data-dependent foreground
         # bias (CLS-patch similarity of the backbone) added to the attention logits over the patch tokens
         self.n_heads = n_heads
         self.prior = nn.Parameter(body_prior(grid, num_attrs)) if spatial_prior else None
         self.fg_w = nn.Parameter(torch.ones(n_heads)) if fg_bias else None
+        self.fg_mode = fg_bias if isinstance(fg_bias, str) else "cls"   # fg_bias=true / "cls" or "pca" (spotlight)
         # mixture of experts: "tokens" routes every patch token to its experts before the attribute queries read them
         # (feature-type specific processing); "queries" replaces the query MLP (attribute-specific processing)
         self.tok_moe = None
@@ -126,7 +161,8 @@ class QueryHead(nn.Module):
             self.layers.append(nn.ModuleDict({
                 **extra,
                 "q_norm": nn.LayerNorm(dim),
-                "attn": nn.MultiheadAttention(dim, n_heads, dropout=drop, batch_first=True),
+                "attn": nn.MultiheadAttention(dim, n_heads, dropout=drop, batch_first=True) if attn_type == "softmax"
+                else EfficientCrossAttention(dim, n_heads, attn_type, drop),
                 "mlp_norm": nn.LayerNorm(dim),
                 "mlp": MoEFFN(dim, moe_experts, moe_topk, mlp_ratio, drop) if q_moe else
                 nn.Sequential(nn.Linear(dim, int(dim * mlp_ratio)), nn.GELU(), nn.Dropout(drop),
@@ -157,10 +193,23 @@ class QueryHead(nn.Module):
             mask = kv.new_zeros(B, self.n_heads, A, S)
             if self.prior is not None:
                 mask[..., 1:] = mask[..., 1:] + self.prior.to(kv.dtype)
-            if self.fg_w is not None:                                  # standardised CLS-patch cosine similarity
+            if self.fg_w is not None:
                 c = nn.functional.normalize(t[:, :1].float(), dim=-1)
                 pt = nn.functional.normalize(t[:, 1:].float(), dim=-1)
-                sim = (pt @ c.transpose(1, 2)).squeeze(-1)             # (B, N)
+                sim = (pt @ c.transpose(1, 2)).squeeze(-1)             # (B, N) CLS-patch cosine similarity
+                if self.fg_mode == "pca":
+                    # PCA spotlight: projection of each patch on the image's first principal component (5 power
+                    # iterations on the centred patch tokens). The first component separates person from background
+                    # in DINO features; its sign is fixed so that it agrees with the CLS similarity.
+                    X = t[:, 1:].float().detach()
+                    X = X - X.mean(1, keepdim=True)
+                    v = X.mean(1)[..., None] + 1e-3
+                    v = torch.randn_like(v) if not torch.isfinite(v).all() else v
+                    for _ in range(5):
+                        v = nn.functional.normalize(X.transpose(1, 2) @ (X @ v), dim=1)
+                    proj = (X @ v).squeeze(-1)                         # (B, N)
+                    sgn = torch.sign(((proj - proj.mean(1, keepdim=True)) * (sim - sim.mean(1, keepdim=True))).sum(1, keepdim=True))
+                    sim = proj * torch.where(sgn == 0, torch.ones_like(sgn), sgn)
                 z = (sim - sim.mean(1, keepdim=True)) / (sim.std(1, keepdim=True) + 1e-6)
                 mask[..., 1:] = mask[..., 1:] + (self.fg_w[None, :, None, None] * z[:, None, None, :]).to(kv.dtype)
             mask = mask.reshape(B * self.n_heads, A, S)
