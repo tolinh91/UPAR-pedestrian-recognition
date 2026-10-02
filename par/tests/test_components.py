@@ -257,6 +257,24 @@ def test_pca_spotlight_bias():
     assert out.shape == (2, A) and torch.isfinite(out).all() and h.fg_w.grad.abs().sum() > 0
 
 
+def test_noise_adaptation_and_missing_distillation():
+    """Anchor dataset: recorded = true. Other datasets: a and b move the recorded probability; distillation on
+    missing cells ignores labelled cells."""
+    from upar.losses import NoiseAdaptation, distill_missing
+    torch.manual_seed(0)
+    na = NoiseAdaptation(3, A, anchor=1, init=-1.0)
+    z = torch.randn(4, A)
+    out = na(z, torch.tensor([1, 1, 0, 2]))
+    assert torch.allclose(out[:2], z[:2], atol=1e-4)                 # anchor rows unchanged
+    assert not torch.allclose(out[2:], z[2:], atol=1e-3)
+    out.sum().backward()
+    assert na.a.grad[0].abs().sum() > 0 and na.a.grad[1].abs().sum() == 0
+    s, t = torch.randn(2, A, requires_grad=True), torch.randn(2, A)
+    v = torch.ones(2, A); v[:, :3] = 0
+    distill_missing(s, t, v).backward()
+    assert s.grad[:, 3:].abs().sum() == 0 and s.grad[:, :3].abs().sum() > 0
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):

@@ -128,3 +128,38 @@ def group_ce(logits, labels, valid, groups=ONE_HOT_GROUPS):
             total = total + F.cross_entropy(logits[ok][:, idx].float(), y[ok].argmax(1), reduction="sum")
             n += int(ok.sum())
     return total / max(n, 1)
+
+
+class NoiseAdaptation(torch.nn.Module):
+    """Dataset-specific labelling conventions (noise adaptation layer, Goldberger & Ben-Reuven 2017).
+
+    The model predicts the probability p that the person truly has the attribute. Dataset d records a positive with
+    q = (1 - b) p + a (1 - p): a = rate of positives written for absent attributes, b = rate of present attributes
+    left at 0, one (a, b) per dataset and attribute. The anchor dataset keeps a = b = 0 so that p is identifiable.
+    Training compares q with the labels; inference uses p, so the layer is never part of the submission."""
+
+    def __init__(self, n_domains, num_attrs, anchor, init=-4.0):
+        super().__init__()
+        self.a = torch.nn.Parameter(torch.full((n_domains, num_attrs), init))
+        self.b = torch.nn.Parameter(torch.full((n_domains, num_attrs), init))
+        mask = torch.ones(n_domains, 1); mask[anchor] = 0
+        self.register_buffer("mask", mask)
+
+    def forward(self, logits, ds):
+        """logits (B, A) of the true attributes, ds (B,) dataset ids -> logits of the recorded labels."""
+        p = torch.sigmoid(logits.float())
+        a = torch.sigmoid(self.a[ds]) * self.mask[ds]
+        b = torch.sigmoid(self.b[ds]) * self.mask[ds]
+        q = ((1 - b) * p + a * (1 - p)).clamp(1e-6, 1 - 1e-6)
+        return torch.log(q) - torch.log1p(-q)
+
+    def rates(self):
+        return torch.sigmoid(self.a) * self.mask, torch.sigmoid(self.b) * self.mask
+
+
+def distill_missing(student_logits, teacher_logits, valid):
+    """BCE towards the teacher's probabilities on the cells without a label (valid = 0) only."""
+    miss = 1 - valid
+    target = torch.sigmoid(teacher_logits.float())
+    l = F.binary_cross_entropy_with_logits(student_logits.float(), target, reduction="none")
+    return (l * miss).sum() / miss.sum().clamp(min=1)

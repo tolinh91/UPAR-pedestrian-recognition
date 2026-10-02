@@ -22,8 +22,8 @@ import torch
 from timm.utils import ModelEmaV3
 from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
-from upar.data import UPARDataset, build_transforms, invalid_mask, load_split
-from upar.losses import LOSSES, build_loss, distill_bce, group_ce
+from upar.data import UPARDataset, attr_names, build_transforms, invalid_mask, load_split
+from upar.losses import LOSSES, NoiseAdaptation, build_loss, distill_bce, distill_missing, group_ce
 from upar.metrics import challenge_metrics, fmt
 from upar.models import HEADS, build_model, cfg_from_checkpoint
 from upar.registry import parse_kv
@@ -48,6 +48,10 @@ def get_args(argv=None):
     g.add_argument("--loss", default="bce", help=f"one of {LOSSES.names()}")
     g.add_argument("--loss-kw", nargs="*", default=["smooth=0.05", "weighting=deepmar"], metavar="K=V",
                    help="shared: smooth, weighting (none|deepmar|sqrt|inverse), max_weight; plus loss-specific")
+    g.add_argument("--noise-adapt", action="store_true",
+                   help="per-dataset labelling-convention layer between the true attributes and the recorded labels")
+    g.add_argument("--kd-missing", type=float, default=0.0,
+                   help="with --teacher: weight of distillation on unlabelled cells only (instead of the usual KD)")
     g.add_argument("--aux-rec", default="none", choices=["none", "mae", "attr"],
                    help="training-only reconstruction decoder (dropped after training): masked patches or image from attributes")
     g.add_argument("--aux-rec-weight", type=float, default=0.2)
@@ -190,7 +194,8 @@ def load_teacher(path, student_cfg):
     return teacher
 
 
-def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, dtype, step, teacher=None, aux_dec=None):
+def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, dtype, step, teacher=None, aux_dec=None,
+                    adapt=None):
     from upar.models.heads import MoEFFN
     moe_modules = [m for m in model.modules() if isinstance(m, MoEFFN)]
     model.train(); t0 = time.time(); run = torch.zeros((), device="cuda")
@@ -208,7 +213,10 @@ def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, d
                 rec = aux_dec(q_attr if args.aux_rec == "attr" else tokens[:, model.n_prefix:], x)
             else:
                 logits = model(x, **ds_kw)
-        loss = loss_fn(logits.float(), y, v)
+        if adapt is not None:   # the labels are compared with what this dataset would record, not with the truth
+            loss = loss_fn(adapt(logits, d.cuda(non_blocking=True)), y, v)
+        else:
+            loss = loss_fn(logits.float(), y, v)
         if args.group_ce:
             loss = loss + args.group_ce * group_ce(logits, y, v)
         if aux_dec is not None:
@@ -219,11 +227,15 @@ def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, d
         if teacher is not None:
             with torch.no_grad(), torch.autocast("cuda", dtype=dtype):
                 t_logits = teacher(x.to(next(teacher.parameters()).dtype)).float()
-            loss = (1 - args.kd_alpha) * loss + args.kd_alpha * distill_bce(logits, t_logits, args.kd_T)
+            if args.kd_missing:
+                loss = loss + args.kd_missing * distill_missing(logits, t_logits, v)
+            else:
+                loss = (1 - args.kd_alpha) * loss + args.kd_alpha * distill_bce(logits, t_logits, args.kd_T)
         opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
-        torch.nn.utils.clip_grad_norm_(list(model.parameters()) + (list(aux_dec.parameters()) if aux_dec else []), 1.0)
+        torch.nn.utils.clip_grad_norm_(list(model.parameters()) + (list(aux_dec.parameters()) if aux_dec else [])
+                                       + (list(adapt.parameters()) if adapt is not None else []), 1.0)
         scaler.step(opt); scaler.update()
         ema.update(model, step=step); step += 1
         run += loss.detach()  # no .item() per step: it would make the CPU wait for the GPU
@@ -284,7 +296,16 @@ def main():
         aux_dec = AUX_DECODERS[args.aux_rec](model.backbone.num_features, (args.size[0] // 16, args.size[1] // 16)).cuda()
         print(f"aux decoder {args.aux_rec}: {sum(p.numel() for p in aux_dec.parameters()) / 1e6:.1f}M params, "
               f"weight {args.aux_rec_weight}", flush=True)
+    adapt = None
+    if args.noise_adapt:  # anchor = the training dataset with the most images (its convention defines "true")
+        from upar.data import DOMAINS
+        counts = {d: sum(int((ds.ds[ds.idx] == d).sum()) for ds in train_dl.dataset.datasets) for d in DOMAINS}
+        anchor = DOMAINS.index(max(counts, key=counts.get))
+        adapt = NoiseAdaptation(len(DOMAINS), len(attr_names()), anchor).cuda()
+        print(f"noise adaptation, anchor {DOMAINS[anchor]}", flush=True)
     groups = model.param_groups(args.lr, args.wd, args.layer_decay, args.head_lr_mult)
+    if adapt is not None:
+        groups.append({"params": list(adapt.parameters()), "lr": args.lr * args.head_lr_mult, "weight_decay": 0.0})
     if aux_dec is not None:
         groups.append({"params": list(aux_dec.parameters()), "lr": args.lr * args.head_lr_mult, "weight_decay": args.wd})
     opt = torch.optim.AdamW(groups, fused=True)
@@ -306,7 +327,10 @@ def main():
             for p in trainable:
                 p.requires_grad_(ep >= args.lp_epochs)
             print(f"epoch {ep}: {'head only (LP)' if ep < args.lp_epochs else 'full fine-tuning'}", flush=True)
-        step = train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, train_dl, args, dtype, step, teacher, aux_dec)
+        step = train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, train_dl, args, dtype, step, teacher, aux_dec, adapt)
+        if adapt is not None:  # learned conventions, for inspection
+            ra, rb = adapt.rates()
+            json.dump({"a": ra.tolist(), "b": rb.tolist()}, open(out / "noise_adapt.json", "w"))
         m, logits, idx = evaluate(ep, ema.module, val_ds, val_dl, dtype, t0)
         ck = {"model": ema.module.state_dict(), "model_cfg": model_cfg(args), "args": vars(args), "epoch": ep, "val": m}
         torch.save(ck, out / "last.pt")
