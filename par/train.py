@@ -19,10 +19,12 @@ from pathlib import Path
 import numpy as np
 import timm
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from timm.utils import ModelEmaV3
 from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
-from upar.data import UPARDataset, attr_names, build_transforms, invalid_mask, load_split
+from upar.data import MEAN, STD, UPARDataset, attr_names, build_transforms, invalid_mask, load_split
 from upar.losses import LOSSES, NoiseAdaptation, build_loss, distill_bce, distill_missing, group_ce
 from upar.metrics import challenge_metrics, fmt
 from upar.models import HEADS, build_model, cfg_from_checkpoint
@@ -174,20 +176,54 @@ class CosineWithWarmup:
             g["lr"] = g["base_lr"] * s
 
 
-def load_teacher(path, student_cfg):
-    """Frozen teacher in eval mode; it must see exactly the student's input tensor (same size and normalisation)."""
-    ck = torch.load(path, map_location="cpu", weights_only=False)
-    tcfg = cfg_from_checkpoint(ck)
-    for k in ("size", "mean", "std"):
-        a, b = tcfg.get(k), student_cfg.get(k)
-        if a is not None and b is not None and list(a) != list(b):
-            raise ValueError(f"teacher {k}={a} differs from student {k}={b}")
-    teacher = build_model(tcfg, pretrained=False)
-    teacher.load_state_dict(ck["model"])
+class Teacher(nn.Module):
+    """Frozen teacher(s) fed the student's batch. Each teacher gets the batch at its own input size and normalisation
+    (the student's normalisation is undone first), and the logits are averaged: distilling an ensemble of different
+    pretrainings (e.g. DINOv3 + CLIP) into one model that fits the CPU budget."""
+
+    def __init__(self, models, cfgs, student_cfg):
+        super().__init__()
+        self.models = nn.ModuleList(models)
+        self.sizes = [tuple(c["size"]) for c in cfgs]
+        stat = lambda c, k, d: torch.tensor(c.get(k) or d).view(1, 3, 1, 1)
+        self.register_buffer("s_mean", stat(student_cfg, "mean", MEAN))
+        self.register_buffer("s_std", stat(student_cfg, "std", STD))
+        for i, c in enumerate(cfgs):
+            self.register_buffer(f"mean{i}", stat(c, "mean", MEAN))
+            self.register_buffer(f"std{i}", stat(c, "std", STD))
+        self.same = [tuple(c["size"]) == tuple(student_cfg["size"]) and list(c.get("mean") or MEAN) == list(student_cfg.get("mean") or MEAN)
+                     and list(c.get("std") or STD) == list(student_cfg.get("std") or STD) for c in cfgs]
+
+    def forward(self, x):
+        raw = None
+        out = 0
+        for i, m in enumerate(self.models):
+            if self.same[i]:
+                xi = x
+            else:
+                if raw is None:
+                    raw = x * self.s_std.to(x.dtype) + self.s_mean.to(x.dtype)
+                xi = raw if self.sizes[i] == tuple(x.shape[-2:]) else F.interpolate(raw, size=self.sizes[i], mode="bilinear", align_corners=False)
+                xi = (xi - getattr(self, f"mean{i}").to(x.dtype)) / getattr(self, f"std{i}").to(x.dtype)
+            out = out + m(xi).float()
+        return out / len(self.models)
+
+
+def load_teacher(paths, student_cfg):
+    """Frozen teacher ensemble in eval mode from comma-separated checkpoints (sizes / normalisations may differ)."""
+    models, cfgs = [], []
+    for path in paths.split(","):
+        ck = torch.load(path, map_location="cpu", weights_only=False)
+        tcfg = cfg_from_checkpoint(ck)
+        teacher = build_model(tcfg, pretrained=False)
+        teacher.load_state_dict(ck["model"])
+        print(f"teacher {tcfg['backbone']} {tcfg['size']} from {path} (epoch {ck.get('epoch')}, "
+              f"val {ck.get('val', {}).get('Challenge_Avg')})", flush=True)
+        models.append(teacher)
+        cfgs.append(tcfg)
+    teacher = Teacher(models, cfgs, student_cfg)
     for p in teacher.parameters():
         p.requires_grad_(False)
-    print(f"teacher {tcfg['backbone']} from {path} (epoch {ck.get('epoch')}, val {ck.get('val', {}).get('Challenge_Avg')})",
-          flush=True)
     teacher = teacher.cuda().eval()
     if torch.cuda.get_device_capability()[0] >= 8:
         teacher = teacher.to(torch.bfloat16)  # inference only: half the memory, next to the student on one GPU
