@@ -217,26 +217,56 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# ---- UPAR 2027 project ----
-# starter kit of the organizers (clone separately), datasets and derived caches
+# ---- UPAR 2027 Track 1 project ----
+# starter kit of the organizers (clone separately), datasets, image caches, local test inputs
 UPAR-Challenge-2027/
 cache/
 fake_input_data/
-# training outputs, built submissions, Colab bundles
+
+# training outputs, built submissions, archives
 runs/
 submissions/
-colab/*.zip
+*.zip
+*.tar
+*.tar.gz
+
+# model weights and caches (re-created by training or downloaded by timm / Hugging Face)
 *.pt
 *.pth
+*.ckpt
+*.safetensors
+*.onnx
 *.npz
-# LaTeX build files
-report/*.aux
-report/*.log
-report/*.fdb_latexmk
-report/*.fls
-report/*.out
-report/*.xdv
+hf_cache/
+.hf_home/
+
+# experiment trackers and job output
+wandb/
+mlruns/
+lightning_logs/
+outputs/
+nohup.out
+
+# LaTeX build files (any folder)
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.xdv
+*.toc
+*.bbl
+*.blg
+*.synctex.gz
 build.log
+build_*.log
+
+# editors, OS and local tool settings
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+.claude/settings.local.json
+
 # NVIDIA C-RADIO source files, downloaded from Hugging Face on first use (NVIDIA license)
 par/upar/models/radio_nv/*.py
 !par/upar/models/radio_nv/__init__.py
