@@ -57,10 +57,11 @@ class PARModel(nn.Module):
         if keep_blocks and hasattr(self.backbone, "blocks"):  # truncated backbone: first N blocks, cheaper on CPU
             self.backbone.blocks = self.backbone.blocks[:keep_blocks]
         # CNN (ConvNeXt, ...): feature map (B, C, H, W) -> tokens [global mean ; H*W cells], one prefix token
-        self.is_cnn = not hasattr(self.backbone, "blocks")
+        # CNNs and SAM's ViT (its neck returns a (B, 256, H, W) map) give feature maps, not tokens
+        self.is_cnn = not hasattr(self.backbone, "blocks") or backbone.startswith("samvit")
         if self.is_cnn and (multi_layer > 1 or mixstyle):
             raise ValueError("multi_layer / mixstyle need a ViT backbone")
-        self.n_prefix = 1 if not hasattr(self.backbone, "blocks") else getattr(self.backbone, "num_prefix_tokens", 1)
+        self.n_prefix = 1 if self.is_cnn else getattr(self.backbone, "num_prefix_tokens", 1)
         head_kw = dict(head_kw or {})
         if (head == "conv" or head_kw.get("spatial_prior")) and "grid" not in head_kw:  # patch grid of the input size
             ps = getattr(self.backbone, "patch_size", None) or getattr(getattr(self.backbone, "patch_embed", None),
@@ -116,7 +117,7 @@ class PARModel(nn.Module):
             if name.startswith("blocks."):
                 if int(name.split(".")[1]) >= n_blocks:
                     continue
-            elif name.startswith(("norm", "fc_norm", "head")):
+            elif name.startswith(("norm", "fc_norm", "head", "neck")):  # SAM neck sits after the blocks
                 continue
             p.requires_grad_(False)
             n += p.numel()
