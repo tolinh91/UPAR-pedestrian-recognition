@@ -26,6 +26,9 @@ def attr_names():
     return list(load_split("val").columns[1:41])
 
 
+DOMAINS = ["Market1501", "PA100k", "PETA"]  # fixed ids for dataset-specific heads
+
+
 def invalid_mask(df_train):
     """(n_ds, A) bool: attribute never positive in a dataset's train labels -> treated as unannotated."""
     attrs = attr_names()
@@ -127,6 +130,7 @@ def build_transforms(size, train, mean=MEAN, std=STD, aug="base"):
             T.Normalize(mean, std),
             T.RandomErasing(p=0.5, scale=(0.02, 0.25), value="random"),
         ])
+    wb = [RandomWhiteBalance(p=0.5, gain=0.15, gamma=(0.9, 1.1))] if aug == "wb" else []
     return T.Compose([
         RandomLowRes(),
         T.Resize((h, w)),
@@ -137,13 +141,14 @@ def build_transforms(size, train, mean=MEAN, std=STD, aug="base"):
         T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
         RandomBlur(),
         T.ToTensor(),
+        *wb,  # "wb": base + per-channel gains (camera / illuminant colour cast, von Kries model)
         T.Normalize(mean, std),
         T.RandomErasing(p=0.3, scale=(0.02, 0.15), value="random"),
     ])
 
 
 class UPARDataset(Dataset):
-    def __init__(self, split, transform, invalid=None, rows=None):
+    def __init__(self, split, transform, invalid=None, rows=None, ignore=None):
         df = load_split(split)
         self.buf, self.off = image_cache(split)
         self.idx = np.arange(len(df)) if rows is None else np.asarray(rows)
@@ -155,6 +160,8 @@ class UPARDataset(Dataset):
         if invalid:
             for ds, m in invalid.items():
                 valid[self.ds == ds] = ~m
+        if ignore is not None:  # (len(split), A) bool: cells flagged as label noise are treated as unannotated
+            valid[ignore] = 0
         self.valid = valid.astype(np.float32)
         self.transform = transform
 
@@ -164,7 +171,8 @@ class UPARDataset(Dataset):
     def __getitem__(self, i):
         j = self.idx[i]
         img = Image.open(io.BytesIO(self.buf[self.off[j]:self.off[j + 1]].tobytes())).convert("RGB")
-        return self.transform(img), torch.from_numpy(self.labels[j]), torch.from_numpy(self.valid[j]), j
+        return self.transform(img), torch.from_numpy(self.labels[j]), torch.from_numpy(self.valid[j]), j, \
+            DOMAINS.index(self.ds[j])
 
     def sample_weights(self, alpha=0.5):
         """Per-sample weights so dataset d is drawn ~ N_d^alpha (alpha=0: equal per dataset)."""

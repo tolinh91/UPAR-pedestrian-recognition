@@ -110,3 +110,21 @@ def distill_bce(student_logits, teacher_logits, T=1.0):
     Scaled by T^2 so the gradient size does not depend on the temperature (Hinton et al. 2015)."""
     target = torch.sigmoid(teacher_logits.float() / T)
     return F.binary_cross_entropy_with_logits(student_logits.float() / T, target) * T * T
+
+
+# attribute groups with exactly one positive per image in (almost) every annotated sample of all three datasets
+ONE_HOT_GROUPS = ([0, 1, 2], [4, 5, 6], [33, 34], list(range(8, 20)), list(range(21, 33)))
+
+
+def group_ce(logits, labels, valid, groups=ONE_HOT_GROUPS):
+    """Categorical cross-entropy over each one-of-K group (softmax of the group's logits), on the samples whose group
+    is fully annotated with exactly one positive. The 40 independent sigmoids put probability mass on label vectors
+    that never occur (two ages, no upper colour); this term adds the correct categorical likelihood for 32 of them."""
+    total, n = logits.new_zeros(()), 0
+    for idx in groups:
+        y, m = labels[:, idx], valid[:, idx]
+        ok = (m.min(1).values > 0) & (y.sum(1) == 1)
+        if ok.any():
+            total = total + F.cross_entropy(logits[ok][:, idx].float(), y[ok].argmax(1), reduction="sum")
+            n += int(ok.sum())
+    return total / max(n, 1)

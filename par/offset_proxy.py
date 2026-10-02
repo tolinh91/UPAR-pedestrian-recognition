@@ -24,23 +24,28 @@ from upar.metrics import challenge_metrics, fmt
 from upar.models import build_model, cfg_from_checkpoint
 
 
-def main(run):
+def predict_rows(cfg, ck, rows):
+    model = build_model(cfg, pretrained=False).cuda()
+    model.load_state_dict(ck["model"])
+    norm = {k: cfg[k] for k in ("mean", "std") if cfg.get(k)}
+    ds = UPARDataset("val", build_transforms(tuple(cfg["size"]), False, **norm), rows=rows)
+    dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+    return predict(model, DataLoader(ds, 128, num_workers=3), dtype=dtype)
+
+
+def main(run, ckpt="best.pt"):
+    """ckpt: best.pt is selected on the held-out dataset itself (optimistic); last.pt is the honest proxy score."""
     run = Path(run)
-    ck = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
+    ck = torch.load(run / ckpt, map_location="cpu", weights_only=False)
+    tag = "" if ckpt == "best.pt" else "_" + Path(ckpt).stem
     cfg, held = cfg_from_checkpoint(ck), ck["args"]["holdout"]
     A = attr_names()
     tr, va = load_split("train"), load_split("val")
 
     # 1. logits on val of the datasets the proxy model was trained on
-    cache = run / "seen_val_logits.npz"
+    cache = run / f"seen_val_logits{tag}.npz"
     if not cache.exists():
-        model = build_model(cfg, pretrained=False).cuda()
-        model.load_state_dict(ck["model"])
-        norm = {k: cfg[k] for k in ("mean", "std") if cfg.get(k)}
-        rows = np.where(va.ds.values != held)[0]
-        ds = UPARDataset("val", build_transforms(tuple(cfg["size"]), False, **norm), rows=rows)
-        dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
-        lg, idx = predict(model, DataLoader(ds, 128, num_workers=3), dtype=dtype)
+        lg, idx = predict_rows(cfg, ck, np.where(va.ds.values != held)[0])
         np.savez(cache, logits=lg, idx=idx)
     z = np.load(cache)
     seen_gt, seen_ds = va[A].values[z["idx"]], va.ds.values[z["idx"]]
@@ -48,7 +53,14 @@ def main(run):
     print("offsets fit on seen-domain val:", fmt(challenge_metrics(seen_gt, 1 / (1 + np.exp(-(z["logits"] + off))), seen_ds)[0]))
 
     # 2. held-out logits saved by train.py
-    h = np.load(run / "val_logits.npz")
+    if ckpt == "best.pt":
+        h = np.load(run / "val_logits.npz")
+    else:
+        hcache = run / f"held_val_logits{tag}.npz"
+        if not hcache.exists():
+            lg, idx = predict_rows(cfg, ck, np.where(va.ds.values == held)[0])
+            np.savez(hcache, logits=lg, idx=idx)
+        h = np.load(hcache)
     gt, grp = va[A].values[h["idx"]], va.ds.values[h["idx"]]
     print(f"held-out {held}: AUC {mean_auc(gt, h['logits'], gt.any(0)):.4f}")
 
@@ -66,8 +78,8 @@ def main(run):
     for name, m in rows:
         print(f"{name:24s} {m['Challenge_Avg']:.4f} {m['mA']:.4f} {m['Instance_F1']:.4f} "
               f"{m['Instance_Prec']:.4f} {m['Instance_Rec']:.4f}")
-    json.dump({n: m for n, m in rows}, open(run / "offset_proxy.json", "w"), indent=1)
+    json.dump({n: m for n, m in rows}, open(run / f"offset_proxy{tag}.json", "w"), indent=1)
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:3])

@@ -34,7 +34,7 @@ def parse_kv(items):
                 break
             except ValueError:
                 pass
-        if v in ("true", "false"):
-            v = v == "true"
+        if isinstance(v, str) and v.lower() in ("true", "false"):
+            v = v.lower() == "true"
         out[k] = v
     return out

@@ -23,6 +23,7 @@ def main():
     ap.add_argument("--no-offset", action="store_true")
     ap.add_argument("--name", required=True)
     ap.add_argument("--no-budget", action="store_true", help="process every image even past the time limit")
+    ap.add_argument("--budget-s", type=float, default=None, help="time budget in seconds (run.py default 3200; limit 3600)")
     args = ap.parse_args()
 
     run = Path(args.run)
@@ -59,6 +60,8 @@ def main():
            "source": {"run": str(run), "ckpt": args.ckpt, "epoch": ck["epoch"], "val": ck["val"]}}
     if args.no_budget:
         cfg["budget_s"] = None
+    elif args.budget_s:
+        cfg["budget_s"] = args.budget_s
     json.dump(cfg, open(out / "assets" / "config.json", "w"), indent=1)
 
     zip_path = shutil.make_archive(str(out), "zip", root_dir=out)

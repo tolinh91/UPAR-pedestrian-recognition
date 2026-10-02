@@ -70,7 +70,8 @@ def test_asl_reduces_easy_negative_loss():
 def test_heads_output_shape():
     tokens = torch.randn(2, 5 + 128, D)
     for name in HEADS.names():
-        head = HEADS.build(name, D, A, **({"n_heads": 4} if name == "query" else {}))
+        kw = {"query": {"n_heads": 4}, "dual": {"n_heads": 4}, "conv": {"grid": (16, 8)}, "seq": {"n_heads": 4}}.get(name, {})
+        head = HEADS.build(name, D, A, **kw)
         assert head(tokens, 5).shape == (2, A), name
 
 
@@ -116,6 +117,123 @@ def test_radio_copy_is_independent():
         b.drop_path1 = b.drop_path2 = torch.nn.Identity()
     with torch.no_grad():
         assert torch.allclose(c.train()(x), before, atol=1e-5)
+
+
+def test_new_options_copy_independent_and_shapes():
+    """multi-layer tokens, MixStyle and the dual head: right shapes, EMA deepcopy computes with its own weights,
+    MixStyle only acts in train mode."""
+    import copy
+    from upar.models import build_model
+    torch.manual_seed(0)
+    cfg = {"backbone": "vit_small_patch16_224", "size": [64, 32], "head": "dual", "head_kw": {"n_heads": 4},
+           "multi_layer": 3, "mixstyle": {"block": 2, "p": 1.0, "alpha": 0.1}}
+    m = build_model(cfg, pretrained=False).eval()
+    x = torch.randn(4, 3, 64, 32)
+    with torch.no_grad():
+        out = m(x)
+        assert out.shape == (4, A)
+        c = copy.deepcopy(m)
+        assert torch.equal(c(x), out)
+        for p in m.parameters():
+            p.add_(torch.randn_like(p))
+        assert torch.equal(c(x), out)  # the copy does not read the original's block outputs
+        assert torch.equal(c(x), c(x))  # eval: MixStyle off, deterministic
+        c.train()
+        for mod in c.modules():
+            if isinstance(mod, torch.nn.Dropout):
+                mod.p = 0.0
+        for b in c.backbone.blocks:
+            b.drop_path1 = b.drop_path2 = torch.nn.Identity()
+        assert not torch.allclose(c(x), out)  # train: MixStyle changes the tokens
+    names = [n for n, _ in m.named_parameters()]
+    assert "neck.layer_w" in names
+    groups = m.param_groups(1e-4, 0.05, 0.75, 10.0)
+    assert any(g["lr"] == 1e-3 and any(p is m.neck["layer_w"] for p in g["params"]) for g in groups)  # head lr
+
+
+def test_domain_heads_and_self_attention():
+    """Dataset-specific classifiers: training picks the sample's classifier, inference averages the trained ones."""
+    tokens = torch.randn(3, 5 + 128, D)
+    h = HEADS.build("query", D, A, n_heads=4, n_domains=3, avg_domains=[0, 1], self_attn=True).eval()
+    ds = torch.tensor([0, 1, 1])
+    with torch.no_grad():
+        per = h(tokens, 5, ds)
+        own0 = h(tokens, 5, torch.zeros(3, dtype=torch.long))
+        own1 = h(tokens, 5, torch.ones(3, dtype=torch.long))
+        avg = h(tokens, 5)
+    assert torch.allclose(per[0], own0[0]) and torch.allclose(per[1:], own1[1:])
+    assert torch.allclose(avg, (own0 + own1) / 2, atol=1e-5)  # linear classifiers: averaging weights = averaging logits
+    assert "layers.0.sa.in_proj_weight" in dict(h.named_parameters())
+
+
+def test_moe_dense_train_equals_sparse_eval():
+    """The dense (train) and sparse (eval) MoE paths compute the same function; the head trains end to end."""
+    from upar.models.heads import MoEFFN
+    torch.manual_seed(0)
+    moe = MoEFFN(D, n_experts=8, topk=2, drop=0.0)
+    torch.nn.init.normal_(moe.router.weight, std=0.5)
+    x = torch.randn(4, 7, D)
+    dense = moe.train()(x)
+    sparse = moe.eval()(x)
+    assert torch.allclose(dense, sparse, atol=1e-5)
+    assert 1.0 <= moe.last_aux.item() < 8.0
+    for where in ("tokens", "queries", "tokens+queries"):
+        h = HEADS.build("query", D, A, n_heads=4, moe_experts=4, moe_where=where).train()
+        out = h(torch.randn(2, 5 + 128, D), 5)
+        out.sum().backward()
+        assert out.shape == (2, A) and h.queries.grad is not None, where
+
+
+def test_selective_ssm_is_causal_and_sequential_heads_train():
+    """Step t of the selective scan never sees steps > t; both sequential heads train end to end."""
+    from upar.models.heads import SelectiveSSM
+    torch.manual_seed(0)
+    ssm = SelectiveSSM(D, d_inner=64, d_state=8)
+    torch.nn.init.normal_(ssm.out_proj.weight, std=0.1)
+    x = torch.randn(2, 12, D)
+    y = ssm(x)
+    x2 = x.clone(); x2[:, 7:] += torch.randn_like(x2[:, 7:])
+    y2 = ssm(x2)
+    assert torch.allclose(y[:, :7], y2[:, :7], atol=1e-5) and not torch.allclose(y[:, 7:], y2[:, 7:])
+    for mode in ("mamba", "seqattn"):
+        h = HEADS.build("seq", D, A, mode=mode, n_heads=4, d_inner=64, d_state=8).train()
+        out = h(torch.randn(2, 5 + 128, D), 5)
+        out.sum().backward()
+        assert out.shape == (2, A) and h.queries.grad.abs().sum() > 0, mode
+
+
+def test_reconstruction_decoders():
+    """Targets are 4x4 cell means of each patch; both decoders give a finite loss whose gradient reaches their inputs;
+    the decoders are separate modules, so the model's state_dict (checkpoint, submission) is unchanged."""
+    from upar.models.aux_decoders import AUX_DECODERS, patch_targets
+    img = torch.arange(2 * 3 * 64 * 32, dtype=torch.float32).reshape(2, 3, 64, 32)
+    t = patch_targets(img, (4, 2))
+    assert t.shape == (2, 8, 48)
+    assert torch.isclose(t[0, 0, 0], img[0, 0, :4, :4].mean())         # first cell of the first patch, red channel
+    toks = torch.randn(2, 8, D, requires_grad=True)
+    for name, src in (("mae", toks), ("attr", torch.randn(2, A, D, requires_grad=True))):
+        dec = AUX_DECODERS[name](D, (4, 2), width=32, heads=4)
+        loss = dec(src, img / img.max())
+        loss.backward()
+        assert torch.isfinite(loss) and src.grad.abs().sum() > 0, name
+
+
+def test_query_attention_priors():
+    """Body-part prior: hat looks at the top rows, lower-body colour at the bottom, gender is unbiased; both biases
+    get gradients; with a zero bias the head equals the plain query head."""
+    from upar.models.heads import body_prior
+    pr = body_prior((16, 8), A).reshape(A, 16, 8)
+    assert pr[39, 0, 0] > pr[39, 15, 0] and pr[25, 15, 0] > pr[25, 0, 0] and pr[3].abs().max() == 0
+    torch.manual_seed(0)
+    tokens = torch.randn(2, 5 + 128, D)
+    h = HEADS.build("query", D, A, n_heads=4, spatial_prior=True, fg_bias=True, grid=(16, 8)).train()
+    h(tokens, 5).sum().backward()
+    assert h.prior.grad.abs().sum() > 0 and h.fg_w.grad.abs().sum() > 0
+    torch.manual_seed(1); plain = HEADS.build("query", D, A, n_heads=4).eval()
+    torch.manual_seed(1); biased = HEADS.build("query", D, A, n_heads=4, spatial_prior=True, grid=(16, 8)).eval()
+    with torch.no_grad():
+        biased.prior.zero_()
+        assert torch.allclose(plain(tokens, 5), biased(tokens, 5), atol=1e-5)
 
 
 if __name__ == "__main__":
