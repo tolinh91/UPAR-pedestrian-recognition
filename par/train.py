@@ -90,6 +90,8 @@ def get_args(argv=None):
     g.add_argument("--prefetch", type=int, default=4, help="batches prefetched per worker (lower = less RAM)")
     g = ap.add_argument_group("run")
     g.add_argument("--out", default="../runs/base")
+    g.add_argument("--no-best", action="store_true",
+                   help="keep only last.pt (val logits of the last epoch): saves disk, val is not held out anyway")
     g.add_argument("--resume", action="store_true", help="continue from <out>/state.pt if it exists")
     g.add_argument("--seed", type=int, default=0, help="random seed (0 = not set)")
     g.add_argument("--compile", action="store_true", help="torch.compile the training forward/backward (~+20%% img/s)")
@@ -370,10 +372,13 @@ def main():
         m, logits, idx = evaluate(ep, ema.module, val_ds, val_dl, dtype, t0)
         ck = {"model": ema.module.state_dict(), "model_cfg": model_cfg(args), "args": vars(args), "epoch": ep, "val": m}
         torch.save(ck, out / "last.pt")
+        if args.no_best:
+            np.savez(out / "val_logits.npz", logits=logits, idx=idx)
         if m["Challenge_Avg"] > best:
             best, stale = m["Challenge_Avg"], 0
-            torch.save(ck, out / "best.pt")
-            np.savez(out / "val_logits.npz", logits=logits, idx=idx)
+            if not args.no_best:
+                torch.save(ck, out / "best.pt")
+                np.savez(out / "val_logits.npz", logits=logits, idx=idx)
         else:
             stale += 1
         if args.resume:  # full state so an interrupted Colab session can continue
