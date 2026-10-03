@@ -94,6 +94,9 @@ def get_args(argv=None):
                    help="keep only last.pt (val logits of the last epoch): saves disk, val is not held out anyway")
     g.add_argument("--resume", action="store_true", help="continue from <out>/state.pt if it exists")
     g.add_argument("--seed", type=int, default=0, help="random seed (0 = not set)")
+    g.add_argument("--data-seed", type=int, default=0,
+                   help="reseed after building the model: same initialisation as --seed, different data order / "
+                        "augmentation / drop-path (ingredients of a model soup must share the initialisation)")
     g.add_argument("--compile", action="store_true", help="torch.compile the training forward/backward (~+20%% img/s)")
     g.add_argument("--patience", type=int, default=0,
                    help="early stopping: stop after N epochs without a better val Challenge_Avg (0 = off)")
@@ -314,6 +317,9 @@ def main():
         trained = [i for i, d in enumerate(DOMAINS) if d != args.holdout]
         args.head_kw = dict(args.head_kw, n_domains=len(DOMAINS), avg_domains=trained)
     model = build_model(model_cfg(args)).cuda()
+    if args.data_seed:
+        import random
+        random.seed(args.data_seed); np.random.seed(args.data_seed); torch.manual_seed(args.data_seed)
     dcfg = timm.data.resolve_data_config({}, model=model.backbone)  # input normalisation of the pretraining
     args.mean, args.std = list(dcfg["mean"]), list(dcfg["std"])
     print(f"input normalisation mean {args.mean} std {args.std}", flush=True)
