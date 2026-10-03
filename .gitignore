@@ -1,0 +1,8 @@
+starter/
+__pycache__/
+*.pyc
+runs/
+submissions/
+*.pt
+*.torchscript
+.venv
