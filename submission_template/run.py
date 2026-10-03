@@ -163,6 +163,11 @@ def predict_image(sample):
     boxes = sample.get("boxes") or []
     if not boxes:
         return {"keypoints": [], "scores": []}
+    if time.time() - T_IMPORT > BUDGET_S:  # out of time (slow CPU-only host): box prior instead of a killed run
+        if not _S.get("over"):
+            _S["over"] = 1
+            log(f"budget {BUDGET_S:.0f}s spent after {_S['n']} images: box prior for the rest")
+        return {"keypoints": [_prior(b) for b in boxes], "scores": [0.01] * len(boxes)}
     try:
         img = np.asarray(Image.open(sample["image_path"]).convert("RGB"), dtype=np.float32)
     except Exception as e:
