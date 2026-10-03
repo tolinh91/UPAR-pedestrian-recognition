@@ -63,6 +63,12 @@ def get_args(argv=None):
     g.add_argument("--teacher", default=None, help="teacher checkpoint (best.pt / last.pt of a bigger model)")
     g.add_argument("--kd-alpha", type=float, default=0.5, help="loss = (1-a) * label loss + a * distillation loss")
     g.add_argument("--kd-T", type=float, default=1.0, help="distillation temperature")
+    g.add_argument("--kd-mix", type=float, default=0.0,
+                   help="probability that a batch is mixed (mixup or cutmix, half each) and trained on the teachers' "
+                        "outputs for the mixed images only (function matching, Beyer et al. 2022)")
+    g.add_argument("--kd-agree", action="store_true",
+                   help="weight each distillation cell by the teachers' agreement 1 - |p1 - p2| (needs 2+ teachers): "
+                        "where they disagree the student leans on the label instead (after Beta-KD, CVPR 2026)")
     g = ap.add_argument_group("optimisation")
     g.add_argument("--epochs", type=int, default=10)
     g.add_argument("--bs", type=int, default=64)
@@ -200,8 +206,12 @@ class Teacher(nn.Module):
                      and list(c.get("std") or STD) == list(student_cfg.get("std") or STD) for c in cfgs]
 
     def forward(self, x):
+        return self.forward_all(x).mean(0)
+
+    def forward_all(self, x):
+        """(n_teachers, B, K) logits."""
         raw = None
-        out = 0
+        out = []
         for i, m in enumerate(self.models):
             if self.same[i]:
                 xi = x
@@ -210,8 +220,8 @@ class Teacher(nn.Module):
                     raw = x * self.s_std.to(x.dtype) + self.s_mean.to(x.dtype)
                 xi = raw if self.sizes[i] == tuple(x.shape[-2:]) else F.interpolate(raw, size=self.sizes[i], mode="bilinear", align_corners=False)
                 xi = (xi - getattr(self, f"mean{i}").to(x.dtype)) / getattr(self, f"std{i}").to(x.dtype)
-            out = out + m(xi).float()
-        return out / len(self.models)
+            out.append(m(xi).float())
+        return torch.stack(out)
 
 
 def load_teacher(paths, student_cfg):
@@ -235,6 +245,35 @@ def load_teacher(paths, student_cfg):
     return teacher
 
 
+def mix_batch(x):
+    """Mixup (alpha 0.8) or cutmix (alpha 1.0) with a shuffled copy of the batch; the labels are not mixed: mixed
+    batches are trained on the teachers' outputs for the mixed images."""
+    perm = torch.randperm(x.shape[0], device=x.device)
+    if np.random.rand() < 0.5:
+        lam = float(np.random.beta(0.8, 0.8))
+        return lam * x + (1 - lam) * x[perm]
+    lam = float(np.random.beta(1.0, 1.0))
+    H, W = x.shape[-2:]
+    h, w = int(H * math.sqrt(1 - lam)), int(W * math.sqrt(1 - lam))
+    cy, cx = np.random.randint(H), np.random.randint(W)
+    y0, y1, x0, x1 = max(cy - h // 2, 0), min(cy + h // 2, H), max(cx - w // 2, 0), min(cx + w // 2, W)
+    x = x.clone()
+    x[:, :, y0:y1, x0:x1] = x[perm][:, :, y0:y1, x0:x1]
+    return x
+
+
+def kd_loss(logits, t_all, args):
+    """Distillation on every cell, optionally weighted by the agreement of the teachers."""
+    t = t_all.mean(0)
+    T = args.kd_T
+    cell = F.binary_cross_entropy_with_logits(logits.float() / T, torch.sigmoid(t / T), reduction="none") * T * T
+    if args.kd_agree and t_all.shape[0] > 1:
+        p = torch.sigmoid(t_all)
+        w = (1 - (p.max(0).values - p.min(0).values)).clamp(0, 1)
+        return (cell * w).sum() / w.sum().clamp(min=1e-6)
+    return cell.mean()
+
+
 def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, dtype, step, teacher=None, aux_dec=None,
                     adapt=None):
     from upar.models.heads import MoEFFN
@@ -247,6 +286,9 @@ def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, d
             guard()
         sched.set(step)
         x, y, v = x.cuda(non_blocking=True), y.cuda(non_blocking=True), v.cuda(non_blocking=True)
+        mixed = teacher is not None and args.kd_mix > 0 and np.random.rand() < args.kd_mix
+        if mixed:
+            x = mix_batch(x)
         with torch.autocast("cuda", dtype=dtype):
             ds_kw = {"ds": d.cuda(non_blocking=True)} if args.ds_heads else {}
             if aux_dec is not None:
@@ -267,9 +309,14 @@ def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, d
             loss = loss + args.moe_aux * sum(aux)
         if teacher is not None:
             with torch.no_grad(), torch.autocast("cuda", dtype=dtype):
-                t_logits = teacher(x.to(next(teacher.parameters()).dtype)).float()
+                t_all = teacher.forward_all(x.to(next(teacher.parameters()).dtype)).float()
+            t_logits = t_all.mean(0)
             if args.kd_missing:
                 loss = loss + args.kd_missing * distill_missing(logits, t_logits, v)
+            elif mixed:  # the labels do not describe a mixed image: teachers only
+                loss = kd_loss(logits, t_all, args)
+            elif args.kd_agree:
+                loss = (1 - args.kd_alpha) * loss + args.kd_alpha * kd_loss(logits, t_all, args)
             else:
                 loss = (1 - args.kd_alpha) * loss + args.kd_alpha * distill_bce(logits, t_logits, args.kd_T)
         opt.zero_grad(set_to_none=True)
