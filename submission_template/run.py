@@ -265,7 +265,7 @@ def _check_budget(n_timed):
         _S["t0"], _S["n0"] = time.time(), _S["n"]
         log(f"projected {projected:.0f}s > budget {BUDGET_S:.0f}s, TTA disabled")
     elif not _TTA and spent > BUDGET_S:
-        _S["fallback"] = 1
+        _S["fallback"], _S["fb_from"] = 1, _S["n"]
         log(f"budget spent at {_S['n']}/{_S['total']} images, remaining images get the mean prediction")
 
 
@@ -290,5 +290,8 @@ def rank_gallery(sample: dict) -> dict:
     lp, lq = np.log(p), np.log1p(-p)
     sim = queries @ (lp - lq).T + lq.sum(1)[None, :]
     sim = np.nan_to_num(sim, nan=-1e6, posinf=1e6, neginf=-1e6).astype(np.float32)
+    if _S["fallback"]:  # images never seen by the model go to the bottom of every ranking (a mean prediction would
+        sim[:, _S["fb_from"]:] = sim[:, :_S["fb_from"]].min() - 1.0  # look like a plausible match for every query)
+        log(f"{len(gallery) - _S['fb_from']} images past the budget ranked last")
     log(f"distances {sim.shape}, {time.time() - T_IMPORT:.0f}s since import, fallback={_S['fallback']}")
     return {"distances": -sim}
