@@ -71,12 +71,31 @@ def _norm(name):
     return "".join(ch for ch in str(name).lower() if ch.isalnum())
 
 
+CHUNK = 32  # model batch on CPU: faster than 64 for ViT-L (cache), identical predictions
+
+
 def _forward(x):
-    with torch.autocast("cuda", dtype=_AMP_DTYPE or torch.float32, enabled=_AMP_DTYPE is not None):
+    if x.shape[0] > CHUNK and _DEVICE == "cpu":
+        return torch.cat([_forward(x[i:i + CHUNK]) for i in range(0, x.shape[0], CHUNK)])
+    with torch.autocast(_DEVICE, dtype=_AMP_DTYPE or torch.float32, enabled=_AMP_DTYPE is not None):
         logit = _MODEL(x).float()
         if _TTA:
             logit = (logit + _MODEL(torch.flip(x, dims=[3])).float()) / 2
     return logit
+
+
+def _cpu_info():
+    """CPU model name and whether it has native bf16 matrix instructions (AMX or AVX512-BF16)."""
+    name, flags = "?", set()
+    try:
+        for line in open("/proc/cpuinfo"):
+            if line.startswith("model name") and name == "?":
+                name = line.split(":", 1)[1].strip()
+            elif line.startswith("flags") and not flags:
+                flags = set(line.split(":", 1)[1].split())
+    except Exception:
+        pass
+    return name, bool(flags & {"amx_bf16", "avx512_bf16"}), sorted(flags & {"amx_bf16", "amx_tile", "avx512_bf16", "avx512f", "avx2"})
 
 
 def _gpu_diagnostics():
@@ -151,6 +170,12 @@ def load_model() -> None:
         _MODEL = model
         torch.set_num_threads(_cpu_limit())
         _TTA = _CFG.get("tta_cpu", False)
+        cpu_name, native_bf16, flags = _cpu_info()
+        # bf16 only where the CPU computes it natively (2-4x faster there, logits within ~0.05); emulated bf16 is
+        # ~60x slower, so other CPUs keep fp32
+        if native_bf16 and _CFG.get("cpu_bf16", True):
+            _AMP_DTYPE = torch.bfloat16
+        log(f"cpu: {cpu_name} | flags {flags} | {'bf16' if _AMP_DTYPE is not None else 'fp32'}")
         mode = os.environ.get("UPAR_CPU_INT8", str(_CFG.get("cpu_int8", "0")))
         if mode in ("1", "all"):
             # every Linear: fastest, but destroys DINOv3 accuracy (val Avg 0.885 -> 0.703), kept for reference
