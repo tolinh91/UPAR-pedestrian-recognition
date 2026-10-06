@@ -292,6 +292,21 @@ Instance F1 prefers unbalanced decisions, so a shared $\tau\in[0,1]$ interpolate
 \end{figure*}
 
 %=====================================================================
+\section{What the Query Head Looks At}
+\label{sec:xai}
+
+The query head was motivated by letting each attribute read its own image region (\cref{sec:setting}). To check whether it does so on an unseen domain, we take the query-head model trained without PETA (ViT-B, $256\times128$) and inspect PETA validation images it has never seen. For each of six attributes we select the most confident correct positive and the most confident error under the $\tau$ rule. \Cref{fig:xai} shows, for each case, the image, the cross-attention of that attribute's query over the $16\times8$ patch tokens (averaged over the 8 heads; the share left on the CLS token is at most 1\% in all twelve cases), and Integrated Gradients~\cite{ig} of the attribute's logit with a mean-colour baseline (24 steps, pooled to $8\times8$ pixels; red raises the logit, blue lowers it).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{xai_cases.pdf}
+\caption{Correct cases (top) and errors (bottom) of a model that never saw PETA, on PETA validation images. Rows: image with the attribute, decision, probability and label; attention of the attribute's query; Integrated Gradients. The errors are the most confident ones for each attribute.}
+\label{fig:xai}
+\end{figure}
+
+In all six correct cases the attention falls on the region the attribute describes: the head for hat and glasses, the shoulder strap for backpack, the lower body for skirt and the torso for the red top; for female it covers the head and hair. The errors are more informative. In three of them the image, by visual inspection, contradicts the label: a person in a light cap labelled without a hat, a red jacket labelled as not a red top, and a strap across the shoulder labelled as no backpack. Attention sits on the right region in each, so these look like labelling conventions or label noise rather than failures of the model, consistent with the labelling-convention explanation of \cref{sec:gap}. The skirt false alarm is a heavily blurred image with a dark lower garment. The two misses are failures of perception: for female, a blurred back view, attention spreads over the body and onto the ground; for glasses, the face covers only a few patches. Integrated Gradients is much noisier than attention at this resolution and mostly marks the same regions. These are twelve selected cases; they show what the head does, not how often each kind of error occurs.
+
+%=====================================================================
 \section{Hidden-Test Results}
 \label{sec:test}
 
@@ -368,6 +383,7 @@ On unseen cameras, pedestrian attribute recognition loses about 2.2 points to th
 \bibitem{mixstyle} K.~Zhou, Y.~Yang, Y.~Qiao, T.~Xiang. Domain generalization with MixStyle. In \textit{ICLR}, 2021.
 \bibitem{csra} K.~Zhu, J.~Wu. Residual attention: A simple but effective method for multi-label recognition. In \textit{ICCV}, 2021.
 \bibitem{mamba} A.~Gu, T.~Dao. Mamba: Linear-time sequence modeling with selective state spaces. \textit{arXiv:2312.00752}, 2023.
+\bibitem{ig} M.~Sundararajan, A.~Taly, Q.~Yan. Axiomatic attribution for deep networks. In \textit{ICML}, 2017.
 \bibitem{soup} M.~Wortsman \etal. Model soups: Averaging weights of multiple fine-tuned models improves accuracy without increasing inference time. In \textit{ICML}, 2022.
 \end{thebibliography}
 }

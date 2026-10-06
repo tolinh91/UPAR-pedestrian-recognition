@@ -516,6 +516,20 @@ Bảng~\ref{tab:kd} tách được hai tác động. Ở cùng 3 epoch, chưng c
 
 \paragraph{Trên tập chấm.} Áp quy tắc lên đúng mô hình của v12 nâng điểm từ 0.7896 lên 0.7912. Mức tăng 0.0016 cùng hướng với giao thức thẩm định, nhưng nhỏ hơn độ lệch giữa hai bài nộp lặp trên tập chấm (0.0019, mục~\ref{sec:lb}), nên tập chấm chưa xác lập được nó.
 
+\subsection{Mô hình nhìn vào đâu}
+\label{sec:xai}
+
+Head truy vấn được thiết kế để mỗi thuộc tính tự đọc vùng ảnh của nó (mục~\ref{sec:head}). Để kiểm tra điều này trên miền chưa thấy, chúng tôi dùng mô hình head truy vấn học không có PETA (ViT-B, 256×128) và xem các ảnh val của PETA mà nó chưa từng thấy. Với mỗi thuộc tính trong sáu thuộc tính, chúng tôi chọn ca dương đúng tự tin nhất và ca sai tự tin nhất theo quy tắc $\tau$. Hình~\ref{fig:xai} vẽ cho mỗi ca ba ảnh. Ảnh thứ nhất là ảnh gốc kèm quyết định, xác suất và nhãn. Ảnh thứ hai là \textbf{attention} (tạm dịch: trọng số chú ý) của truy vấn thuộc tính đó lên lưới 16×8 token ảnh, lấy trung bình 8 đầu attention; phần dành cho token CLS không quá 1\% ở cả 12 ca. Ảnh thứ ba là \textbf{Integrated Gradients}~\cite{ig} (tạm dịch: tích phân gradient), một phương pháp quy công cùng họ với SHAP: gradient của logit thuộc tính được tích phân dọc đường từ ảnh màu trung bình tới ảnh thật (24 bước), gộp ô 8×8 pixel; màu đỏ đẩy logit lên, màu xanh kéo xuống.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\linewidth]{xai_cases.png}
+\caption{Các ca đúng (trên) và sai (dưới) của một mô hình chưa từng thấy PETA, trên ảnh val của PETA. Mỗi khối có ba hàng: ảnh kèm thuộc tính, quyết định, xác suất và nhãn; attention của truy vấn thuộc tính; Integrated Gradients. Các ca sai là ca sai tự tin nhất của từng thuộc tính.}
+\label{fig:xai}
+\end{figure}
+
+Ở cả sáu ca đúng, attention rơi đúng vùng mà thuộc tính mô tả: vùng đầu cho mũ và kính, quai đeo vai cho ba lô, nửa dưới cơ thể cho váy, thân trên cho áo đỏ; với thuộc tính nữ, attention phủ đầu và tóc. Các ca sai cho nhiều thông tin hơn. Ở ba ca, nhìn bằng mắt thì ảnh mâu thuẫn với nhãn: một người đội mũ vải sáng màu nhưng nhãn ghi không đội mũ, một chiếc áo khoác đỏ nhưng nhãn ghi không phải áo đỏ, và một quai đeo vắt qua vai nhưng nhãn ghi không có ba lô. Attention ở cả ba ca đều nằm đúng vùng, nên đây giống lỗi nhãn hoặc khác biệt quy ước gán nhãn hơn là lỗi của mô hình, nhất quán với giải thích ở mục~\ref{sec:decomp}. Ca báo nhầm váy là một ảnh rất mờ với quần tối màu. Hai ca bỏ sót là lỗi nhận thức thật. Với thuộc tính nữ, ảnh mờ chụp từ sau lưng, attention tản ra khắp người và cả mặt đường. Với kính, khuôn mặt chỉ chiếm vài mảnh ảnh. Integrated Gradients nhiễu hơn attention nhiều ở độ phân giải này và phần lớn chỉ ra cùng các vùng. Đây là 12 ca được chọn; chúng cho thấy head làm gì, không đo được mỗi loại lỗi xảy ra thường xuyên đến đâu. Mã tạo hình nằm trong \texttt{report/xai/}, kèm một trang tương tác cho phép chọn ảnh và thuộc tính bất kỳ.
+
 \subsection{Những gì không hiệu quả}
 \label{sec:neg}
 
@@ -638,6 +652,7 @@ Trên camera chưa thấy, nhận dạng thuộc tính người đi bộ mất k
 \bibitem{lpft} A.~Kumar, A.~Raghunathan, R.~Jones, T.~Ma, P.~Liang. Fine-tuning can distort pretrained features and underperform out-of-distribution. \textit{ICLR}, 2022.
 \bibitem{asl} T.~Ridnik, E.~Ben-Baruch, N.~Zamir và cộng sự. Asymmetric loss for multi-label classification. \textit{ICCV}, 2021.
 \bibitem{krogh} A.~Krogh, J.~Vedelsby. Neural network ensembles, cross validation, and active learning. \textit{NeurIPS}, 1995.
+\bibitem{ig} M.~Sundararajan, A.~Taly, Q.~Yan. Axiomatic attribution for deep networks. \textit{ICML}, 2017.
 \bibitem{soup} M.~Wortsman, G.~Ilharco, S.~Y.~Gadre và cộng sự. Model soups: Averaging weights of multiple fine-tuned models improves accuracy without increasing inference time. \textit{ICML}, 2022.
 \end{thebibliography}
 

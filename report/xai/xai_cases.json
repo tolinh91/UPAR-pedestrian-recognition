@@ -1,0 +1,126 @@
+{
+ "good": [
+  {
+   "i": 6160,
+   "k": 39,
+   "name": "Accessory-Hat",
+   "kind": "TP",
+   "label": 1,
+   "prob": 0.99482657803094,
+   "file": "PETA/images/16965.png",
+   "cls": 0.00026280467864125967
+  },
+  {
+   "i": 6615,
+   "k": 35,
+   "name": "Accessory-Backpack",
+   "kind": "TP",
+   "label": 1,
+   "prob": 0.9932227435961263,
+   "file": "PETA/images/18139.png",
+   "cls": 2.9679276849492453e-06
+  },
+  {
+   "i": 6756,
+   "k": 34,
+   "name": "LowerBody-Type-Skirt&Dress",
+   "kind": "TP",
+   "label": 1,
+   "prob": 0.9941787428136941,
+   "file": "PETA/images/18501.png",
+   "cls": 1.1217283599762595e-06
+  },
+  {
+   "i": 581,
+   "k": 3,
+   "name": "Gender-Female",
+   "kind": "TP",
+   "label": 1,
+   "prob": 0.9921631294847092,
+   "file": "PETA/images/01593.png",
+   "cls": 7.798023034411017e-06
+  },
+  {
+   "i": 6883,
+   "k": 16,
+   "name": "UpperBody-Color-Red",
+   "kind": "TP",
+   "label": 1,
+   "prob": 0.9945853560543012,
+   "file": "PETA/images/18794.png",
+   "cls": 6.232468149391934e-05
+  },
+  {
+   "i": 1669,
+   "k": 37,
+   "name": "Accessory-Glasses-Normal",
+   "kind": "TP",
+   "label": 1,
+   "prob": 0.9768378713431083,
+   "file": "PETA/images/04788.png",
+   "cls": 0.01494293287396431
+  }
+ ],
+ "bad": [
+  {
+   "i": 6480,
+   "k": 39,
+   "name": "Accessory-Hat",
+   "kind": "FP",
+   "label": 0,
+   "prob": 0.9915649496698401,
+   "file": "PETA/images/17826.png",
+   "cls": 8.454706403426826e-06
+  },
+  {
+   "i": 4459,
+   "k": 35,
+   "name": "Accessory-Backpack",
+   "kind": "FP",
+   "label": 0,
+   "prob": 0.9879388043833819,
+   "file": "PETA/images/12303.png",
+   "cls": 8.526229066774249e-05
+  },
+  {
+   "i": 2590,
+   "k": 34,
+   "name": "LowerBody-Type-Skirt&Dress",
+   "kind": "FP",
+   "label": 0,
+   "prob": 0.9905399319752721,
+   "file": "PETA/images/07361.png",
+   "cls": 4.770161012856988e-07
+  },
+  {
+   "i": 6694,
+   "k": 3,
+   "name": "Gender-Female",
+   "kind": "FN",
+   "label": 1,
+   "prob": 0.011575444287846641,
+   "file": "PETA/images/18340.png",
+   "cls": 2.6706737116910517e-05
+  },
+  {
+   "i": 4533,
+   "k": 16,
+   "name": "UpperBody-Color-Red",
+   "kind": "FP",
+   "label": 0,
+   "prob": 0.9932147815092435,
+   "file": "PETA/images/12516.png",
+   "cls": 0.0002809428842738271
+  },
+  {
+   "i": 3816,
+   "k": 37,
+   "name": "Accessory-Glasses-Normal",
+   "kind": "FN",
+   "label": 1,
+   "prob": 0.025702018733962842,
+   "file": "PETA/images/10680.png",
+   "cls": 8.548046025680378e-05
+  }
+ ]
+}
