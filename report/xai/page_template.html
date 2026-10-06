@@ -1,0 +1,187 @@
+<title>Mô hình nhìn vào đâu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a working bench — picture strip on top, the selected crop with its heat overlay in the middle, attribute list on the right. */
+:root {
+  --bg: #eef0f3; --panel: #ffffff; --ink: #1a1e26; --muted: #5d6573; --line: #d7dbe2;
+  --accent: #c2410c; --accent-soft: #fde7da; --pos: #c2410c; --neg: #2563a8; --bar: #e3e6eb;
+  --display: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --body: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12151b; --panel: #1b2029; --ink: #e7eaf0; --muted: #97a0b0; --line: #2c3340;
+  --accent: #fb923c; --accent-soft: #3a2416; --pos: #fb923c; --neg: #60a5fa; --bar: #2a303b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12151b; --panel: #1b2029; --ink: #e7eaf0; --muted: #97a0b0; --line: #2c3340;
+  --accent: #fb923c; --accent-soft: #3a2416; --pos: #fb923c; --neg: #60a5fa; --bar: #2a303b; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 40px; display: grid; gap: 20px; }
+header h1 { font-family: var(--display); font-weight: 700; font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.2rem); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+.strip button { flex: 0 0 auto; border: 2px solid transparent; border-radius: 6px; padding: 0; background: var(--panel); cursor: pointer; line-height: 0; }
+.strip button[aria-pressed="true"] { border-color: var(--accent); }
+.strip button:focus-visible, .seg button:focus-visible, .attr:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.strip img { width: 40px; height: 74px; object-fit: cover; border-radius: 4px; image-rendering: auto; }
+.bench { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.stage .meta { display: flex; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.views { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.views figure { margin: 0; display: grid; gap: 4px; }
+.views figcaption { font-size: 12px; color: var(--muted); }
+canvas { width: 100%; height: auto; border-radius: 6px; display: block; background: var(--bar); }
+.focus { display: grid; gap: 2px; }
+.focus .name { font-weight: 600; font-size: 1.05rem; }
+.focus .p { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink); padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg button:disabled { color: var(--muted); cursor: not-allowed; opacity: .55; }
+.controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--muted); }
+.controls input[type=range] { accent-color: var(--accent); width: 120px; }
+.legend { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.legend span.ramp { width: 110px; height: 8px; border-radius: 4px; display: inline-block; }
+.attrs { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 14px; min-width: 0; }
+.group h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.group .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; }
+.attr { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; text-align: left; border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; background: transparent; color: var(--ink); font: inherit; font-size: 13.5px; cursor: pointer; }
+.attr:hover { border-color: var(--line); }
+.attr[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.attr .v { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.attr.on .v { color: var(--accent); font-weight: 600; }
+.attr .track { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--bar); position: relative; overflow: hidden; }
+.attr .track i { position: absolute; inset: 0 auto 0 0; background: var(--muted); border-radius: 2px; }
+.attr.on .track i { background: var(--accent); }
+.attr .ig { font-size: 10px; font-family: var(--mono); color: var(--accent); margin-left: 4px; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.notes section { min-width: 0; }
+.notes h2 { font-size: 1rem; margin: 0 0 4px; }
+.notes p { margin: 0; color: var(--muted); font-size: 14px; max-width: 65ch; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">UPAR 2027 · Track 1 · DINOv3 ViT-L 176×96 + head truy vấn (bài v13)</div>
+    <h1>Mô hình nhìn vào đâu khi đoán từng thuộc tính</h1>
+    <p>Mỗi thuộc tính có một vector truy vấn riêng đọc 66 token ảnh (lưới 11×6). Chọn một ảnh và một thuộc tính để xem truy vấn đó dồn attention vào vùng nào, và những pixel nào thực sự đẩy xác suất lên hoặc xuống.</p>
+  </header>
+
+  <nav class="strip" id="strip" aria-label="Chọn ảnh"></nav>
+
+  <div class="bench">
+    <div class="stage">
+      <div class="meta"><span id="src"></span><span id="cls"></span></div>
+      <div class="focus"><span class="name" id="aname"></span><span class="p" id="aprob"></span></div>
+      <div class="views">
+        <figure><canvas id="cvA" width="288" height="528"></canvas><figcaption>Attention của truy vấn</figcaption></figure>
+        <figure><canvas id="cvB" width="288" height="528"></canvas><figcaption id="capB">Integrated Gradients</figcaption></figure>
+      </div>
+      <div class="controls">
+        <label for="alpha">Độ đậm lớp phủ</label><input id="alpha" type="range" min="0" max="100" value="62">
+        <div class="seg" role="group" aria-label="Kiểu vẽ">
+          <button id="smooth" aria-pressed="true">Mượt</button><button id="cells" aria-pressed="false">Theo ô</button>
+        </div>
+      </div>
+      <div class="legend"><span class="ramp" id="rampA"></span><span>attention thấp → cao</span></div>
+      <div class="legend"><span class="ramp" id="rampB"></span><span>kéo xuống ← 0 → đẩy lên</span></div>
+    </div>
+    <div class="attrs" id="attrs"></div>
+  </div>
+
+  <div class="notes">
+    <section><h2>Attention</h2><p>Trọng số cross-attention của truy vấn thuộc tính lên 66 token ảnh, lấy trung bình 8 đầu attention. Phần trọng số dành cho token CLS được bỏ ra và ghi ở góc trên; bản đồ chỉ cho biết truy vấn nhìn vào đâu trong các mảnh ảnh, không cho biết vùng đó đẩy xác suất theo chiều nào.</p></section>
+    <section><h2>Integrated Gradients</h2><p>Phương pháp quy công cùng họ với SHAP: tích phân gradient của logit thuộc tính dọc đường từ ảnh màu trung bình tới ảnh thật (16 bước), cộng qua ba kênh màu, gộp ô 8×8 pixel. Màu cam đẩy xác suất lên, màu xanh kéo xuống. Chỉ tính cho 12 thuộc tính đánh dấu IG.</p></section>
+    <section><h2>Cần đọc thận trọng</h2><p>Ảnh lấy từ PETA, PA100k và Market1501, là dữ liệu mô hình đã học, nên đây là minh hoạ chứ không phải đánh giá trên miền mới. Xác suất đã qua quy tắc ngưỡng τ = 0.42; thuộc tính được coi là có khi xác suất trên 0.5.</p></section>
+  </div>
+</div>
+
+<script type="application/json" id="data">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const VI = {"Age-Young":"Trẻ","Age-Adult":"Trưởng thành","Age-Old":"Già","Gender-Female":"Nữ","Hair-Length-Short":"Tóc ngắn","Hair-Length-Long":"Tóc dài","Hair-Length-Bald":"Hói","UpperBody-Length-Short":"Áo ngắn tay","LowerBody-Length-Short":"Quần/váy ngắn","LowerBody-Type-Trousers&Shorts":"Quần","LowerBody-Type-Skirt&Dress":"Váy","Accessory-Backpack":"Ba lô","Accessory-Bag":"Túi","Accessory-Glasses-Normal":"Kính","Accessory-Glasses-Sun":"Kính râm","Accessory-Hat":"Mũ"};
+const COL = {Black:"đen",Blue:"xanh dương",Brown:"nâu",Green:"xanh lá",Grey:"xám",Orange:"cam",Pink:"hồng",Purple:"tím",Red:"đỏ",White:"trắng",Yellow:"vàng",Other:"khác"};
+const vi = n => VI[n] || (n.startsWith("UpperBody-Color-") ? "Áo " + COL[n.split("-").pop()] : n.startsWith("LowerBody-Color-") ? "Quần " + COL[n.split("-").pop()] : n);
+const GROUPS = [["Tuổi và giới tính", n => n.startsWith("Age") || n.startsWith("Gender")], ["Tóc", n => n.startsWith("Hair")],
+  ["Áo", n => n.startsWith("UpperBody")], ["Quần và váy", n => n.startsWith("LowerBody")], ["Phụ kiện", n => n.startsWith("Accessory")]];
+const [GH, GW] = D.grid, [IH, IW] = D.ig_grid, [H, W] = D.size;
+const S = 3;
+let cur = 0, attr = D.names.indexOf("Accessory-Backpack"), smooth = true;
+try { const s = JSON.parse(localStorage.getItem("xai-sel") || "{}"); if (Number.isInteger(s.img)) cur = s.img; if (Number.isInteger(s.attr)) attr = s.attr; } catch (e) {}
+
+function inferno(t) {  // compact inferno approximation
+  const c = [[0,0,4],[40,11,84],[101,21,110],[159,42,99],[212,72,66],[245,125,21],[250,193,39],[252,255,164]];
+  t = Math.max(0, Math.min(1, t)) * (c.length - 1); const i = Math.floor(t), f = t - i, a = c[i], b = c[Math.min(i + 1, c.length - 1)];
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+}
+function diverge(t) {  // -1 blue, 0 transparent, +1 orange
+  return t >= 0 ? [234, 88, 12] : [37, 99, 235];
+}
+document.getElementById("rampA").style.background = "linear-gradient(90deg," + [0, .25, .5, .75, 1].map(t => "rgb(" + inferno(t).map(Math.round) + ")").join(",") + ")";
+document.getElementById("rampB").style.background = "linear-gradient(90deg, rgb(37,99,235), transparent, rgb(234,88,12))";
+
+const imgs = D.records.map(r => { const im = new Image(); im.src = "data:image/png;base64," + r.image; return im; });
+
+function drawMap(cv, im, grid, gh, gw, mode, alpha) {
+  const ctx = cv.getContext("2d"); ctx.imageSmoothingEnabled = true;
+  ctx.clearRect(0, 0, cv.width, cv.height); ctx.drawImage(im, 0, 0, cv.width, cv.height);
+  if (!grid) { ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(0, 0, cv.width, cv.height); return; }
+  const off = document.createElement("canvas"); off.width = gw; off.height = gh; const o = off.getContext("2d"); const id = o.createImageData(gw, gh);
+  let mx = 0; for (const v of grid) mx = Math.max(mx, Math.abs(v)); mx = mx || 1;
+  grid.forEach((v, i) => {
+    const t = v / mx; const [r, g, b] = mode === "att" ? inferno(t) : diverge(t);
+    id.data.set([r, g, b, mode === "att" ? 255 * (0.25 + 0.75 * t) : 255 * Math.abs(t)], i * 4);
+  });
+  o.putImageData(id, 0, 0);
+  ctx.save(); if (mode === "att") { ctx.fillStyle = "rgba(0,0,0," + 0.45 * alpha + ")"; ctx.fillRect(0, 0, cv.width, cv.height); }
+  ctx.globalAlpha = alpha; ctx.imageSmoothingEnabled = smooth; ctx.drawImage(off, 0, 0, cv.width, cv.height); ctx.restore();
+}
+
+function render() {
+  const r = D.records[cur], im = imgs[cur], alpha = document.getElementById("alpha").value / 100, name = D.names[attr];
+  const go = () => {
+    drawMap(document.getElementById("cvA"), im, r.attention[attr], GH, GW, "att", alpha);
+    drawMap(document.getElementById("cvB"), im, r.ig[attr], IH, IW, "ig", alpha);
+  };
+  im.complete ? go() : (im.onload = go);
+  document.getElementById("src").textContent = r.dataset + " · " + r.file;
+  document.getElementById("cls").textContent = "token CLS nhận " + Math.round(r.cls[attr] * 100) + "% attention";
+  document.getElementById("aname").textContent = vi(name) + "  (" + name + ")";
+  const p = r.prob[attr];
+  document.getElementById("aprob").textContent = "xác suất " + p.toFixed(2) + (p > 0.5 ? " · mô hình nói có" : " · mô hình nói không");
+  document.getElementById("capB").textContent = r.ig[attr] ? "Integrated Gradients (cam đẩy lên, xanh kéo xuống)" : "Integrated Gradients chưa tính cho thuộc tính này";
+  document.querySelectorAll(".strip button").forEach((b, i) => b.setAttribute("aria-pressed", i === cur));
+  document.querySelectorAll(".attr").forEach(b => {
+    const k = +b.dataset.k, v = r.prob[k];
+    b.setAttribute("aria-pressed", k === attr); b.classList.toggle("on", v > 0.5);
+    b.querySelector(".v").textContent = v.toFixed(2); b.querySelector(".track i").style.width = (v * 100).toFixed(1) + "%";
+  });
+  try { localStorage.setItem("xai-sel", JSON.stringify({img: cur, attr})); } catch (e) {}
+}
+
+const strip = document.getElementById("strip");
+D.records.forEach((r, i) => {
+  const b = document.createElement("button"); b.setAttribute("aria-label", r.dataset + " " + r.file);
+  const im = document.createElement("img"); im.src = "data:image/png;base64," + r.image; im.alt = "";
+  b.appendChild(im); b.onclick = () => { cur = i; render(); }; strip.appendChild(b);
+});
+const box = document.getElementById("attrs");
+GROUPS.forEach(([title, test]) => {
+  const g = document.createElement("div"); g.className = "group";
+  g.innerHTML = "<h3>" + title + "</h3><div class='list'></div>";
+  D.names.forEach((n, k) => {
+    if (!test(n)) return;
+    const b = document.createElement("button"); b.className = "attr"; b.dataset.k = k;
+    b.innerHTML = "<span>" + vi(n) + (D.records[0].ig[k] ? "<span class='ig'>IG</span>" : "") + "</span><span class='v'></span><span class='track'><i></i></span>";
+    b.onclick = () => { attr = k; render(); }; g.querySelector(".list").appendChild(b);
+  });
+  box.appendChild(g);
+});
+document.getElementById("alpha").oninput = render;
+document.getElementById("smooth").onclick = () => { smooth = true; document.getElementById("smooth").setAttribute("aria-pressed", true); document.getElementById("cells").setAttribute("aria-pressed", false); render(); };
+document.getElementById("cells").onclick = () => { smooth = false; document.getElementById("cells").setAttribute("aria-pressed", true); document.getElementById("smooth").setAttribute("aria-pressed", false); render(); };
+render();
+</script>
