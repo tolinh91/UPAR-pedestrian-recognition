@@ -174,28 +174,8 @@ Mục này mô tả hệ thống nộp bài theo đúng thứ tự dữ liệu �
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[font=\sffamily\scriptsize, node distance=4mm and 5mm,
-  box/.style={draw=black!55, rounded corners=2pt, fill=white, align=center, minimum height=8mm, inner sep=3pt},
-  hl/.style={box, fill=acc!10, draw=acc!80!black},
-  tc/.style={box, fill=org!10, draw=org!80!black},
-  arr/.style={-{Latex[length=2mm]}, black!65}]
-\node[box] (img) {Ảnh người\\ đi bộ};
-\node[box, right=of img] (rs) {Đổi kích thước\\176×96};
-\node[hl, right=of rs] (bb) {Backbone\\ DINOv3 ViT-L\\ 66 token ảnh};
-\node[hl, right=of bb] (qh) {Query head\\ 40 query};
-\node[box, right=of qh] (lg) {40 logit\\ $z_k$};
-\node[hl, right=of lg] (th) {Dời threshold\\ $z_k + \tau\,b_k$};
-\node[box, right=of th] (pr) {40 xác suất\\ cắt ở 0.5};
-\draw[arr] (img)--(rs); \draw[arr] (rs)--(bb); \draw[arr] (bb)--(qh); \draw[arr] (qh)--(lg); \draw[arr] (lg)--(th); \draw[arr] (th)--(pr);
-\node[tc, below=8mm of rs, xshift=6mm] (t1) {Teacher 1: DINOv3-L};
-\node[tc, below=2mm of t1] (t2) {Teacher 2: CLIP-L};
-\node[tc, right=8mm of $(t1.east)!0.5!(t2.east)$] (avg) {Trung bình\\ logit của teacher};
-\node[box, right=of avg, fill=black!3] (loss) {Loss\\ label + distillation};
-\draw[arr] (t1.east) -- (avg.west |- t1.east); \draw[arr] (t2.east) -- (avg.west |- t2.east); \draw[arr] (avg)--(loss);
-\draw[arr, dashed] (lg.south) |- ($(loss.north)+(0,3mm)$) -- (loss.north);
-\node[font=\sffamily\scriptsize\itshape, text=black!55, anchor=west] at ($(t2.south west)+(0,-3mm)$) {chỉ dùng khi huấn luyện};
-\end{tikzpicture}
-\caption{Hệ thống nộp bài cuối. Hàng trên là đường inference (tạm dịch: suy luận) chạy trên máy chấm, gồm bốn bước được giải thích lần lượt trong mục này. Hàng dưới chỉ tồn tại khi huấn luyện và được giải thích ở mục~\ref{sec:teachers}.}
+\includegraphics[width=\linewidth]{process_overview.png}
+\caption{Một ảnh thật của PETA đi qua mô hình nộp bài. (a) Ảnh được đổi về 176×96 pixel. (b) ViT cắt ảnh thành 66 patch. (c) Sau backbone, mỗi patch thành một token 1024 số. Ba thành phần chính của các token được tô thành màu đỏ, xanh lá, xanh dương, và các vùng cùng loại như đầu, áo, quần nhận màu gần nhau. (d) Query head cấp cho mỗi thuộc tính một query, và mỗi query đặt attention lên những patch nó cần đọc. Patch càng sáng, weight càng lớn. (e) Mỗi query cho một xác suất, được so với threshold 0.5 sau khi đã dời logit. Dấu tích cho biết quyết định khớp với label. Teacher chỉ dùng khi huấn luyện nên không xuất hiện ở đây, xem Hình~\ref{fig:distill}.}
 \label{fig:pipeline}
 \end{figure}
 
@@ -209,6 +189,15 @@ Mục này mô tả hệ thống nộp bài theo đúng thứ tự dữ liệu �
 \paragraph{Yêu cầu.} Backbone cần ba tính chất. Nó phải cho feature (tạm dịch: đặc trưng) tốt ở mức từng vùng ảnh, vì nhiều thuộc tính như kính hay mũ chỉ chiếm vài phần trăm diện tích ảnh. Nó phải giữ được chất lượng khi ảnh nhỏ và mờ. Nó phải chạy kịp trên máy chấm chỉ có CPU, khoảng 120 ms một ảnh (Phụ lục~\ref{app:cpu}).
 
 \paragraph{Cơ chế của ViT.} Chúng tôi dùng Vision Transformer (ViT). ViT chia ảnh thành các ô vuông 16×16 pixel, gọi là \textbf{patch}. Ảnh 176×96 cho lưới 11×6 gồm 66 patch. Mỗi patch được biến thành một vector 1024 số, gọi là \textbf{token}. Ngoài 66 token ảnh, ViT thêm một token đặc biệt tên CLS để tóm tắt toàn ảnh, và DINOv3 thêm bốn token phụ (register) chỉ dùng bên trong mạng. Các token đi qua 24 layer (tạm dịch: tầng), gọi là \textbf{block}. Trong mỗi block, mỗi token so mình với mọi token khác rồi lấy thêm thông tin từ những token liên quan. Sau 24 block, token của một patch mang thông tin về cả patch đó lẫn ngữ cảnh xung quanh. Ví dụ, token của patch chứa quai đeo có thể mang thông tin rằng quai này nối với một chiếc ba lô ở sau lưng.
+
+Hình~\ref{fig:tokenpca} cho thấy trực tiếp các token chứa gì. Chúng tôi lấy token của 160 người trong PETA, tìm ba hướng mà các token khác nhau nhiều nhất bằng phân tích thành phần chính (PCA), rồi tô mỗi token theo vị trí của nó trên ba hướng đó. Không ai chỉ cho backbone đâu là đầu, đâu là quần. Dù vậy, ở cả mười người, vùng đầu nhận cùng một tông màu, vùng thân trên một tông khác, vùng chân một tông khác nữa, và nền tách hẳn khỏi người. Feature của backbone vì vậy đã chia ảnh theo bộ phận cơ thể trước khi head đọc. Đây là điều kiện để query head ở mục~\ref{sec:head} chọn được vùng ảnh cho từng thuộc tính.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{token_pca.png}
+\caption{Mười người ngẫu nhiên của PETA (hàng trên) và token của backbone sau khi chiếu xuống ba thành phần PCA rồi tô màu (hàng dưới). Cùng một bộ phận cơ thể nhận màu gần nhau ở mọi người, dù tư thế, quần áo và nền khác nhau.}
+\label{fig:tokenpca}
+\end{figure}
 
 \paragraph{Vì sao chọn DINOv3.} DINOv3~\cite{dinov3} được pretrain self-supervised (tạm dịch: tự giám sát) trên khoảng 1,7 tỉ ảnh, với mục tiêu học feature tốt ở cả mức toàn ảnh lẫn mức từng patch. Thuộc tính thứ hai khớp với yêu cầu đầu tiên ở trên. Để chọn có căn cứ, chúng tôi fine-tune mười backbone cỡ L với cùng công thức và cùng head, rồi đo trên PETA giấu (Bảng~\ref{tab:encoders}). Tiêu chí chính là AUC, đại lượng đo khả năng ranking không phụ thuộc threshold (mục~\ref{sec:auc}).
 
@@ -249,27 +238,12 @@ DINOv3-L có AUC cao nhất trong nhóm cỡ L. CLIP-L có Avg nhỉnh hơn 0.00
 
 \paragraph{Ý tưởng cốt lõi.} Mỗi thuộc tính được cấp một vector học được, gọi là \textbf{query} (tạm dịch: truy vấn). Query so mình với từng token ảnh, gán weight (tạm dịch: trọng số) cao cho token phù hợp, rồi lấy tổng có weight của các token. Phép tính này gọi là \textbf{cross-attention}. Vì query được học cùng phần còn lại của mạng chỉ từ label có hoặc không, query của thuộc tính mũ sẽ tự học cách chú ý vào các token ở vùng đầu, bởi đó là nơi có thông tin giúp giảm loss (tạm dịch: hàm mất mát). Ý tưởng này đến từ Query2Label~\cite{q2l} và ML-Decoder~\cite{mldecoder} trong phân loại đa label.
 
-\paragraph{Cơ chế.} Hình~\ref{fig:qhead} vẽ query head (tạm dịch: head truy vấn). Gọi $X\in\mathbb{R}^{67\times1024}$ là ma trận gồm token CLS và 66 token ảnh, và $q_k\in\mathbb{R}^{1024}$ là query của thuộc tính $k$. Head tính logit $z_k$ qua ba bước, sau đó là phần ước lượng kích thước và chi phí.
+\paragraph{Cơ chế.} Hình~\ref{fig:qhead} cho thấy query head (tạm dịch: head truy vấn) làm việc trên một ảnh thật. Gọi $X\in\mathbb{R}^{67\times1024}$ là ma trận gồm token CLS và 66 token ảnh, và $q_k\in\mathbb{R}^{1024}$ là query của thuộc tính $k$. Head tính logit $z_k$ qua ba bước, sau đó là phần ước lượng kích thước và chi phí.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[font=\sffamily\footnotesize, node distance=5mm and 5mm,
-  box/.style={draw=black!55, rounded corners=2pt, fill=white, align=center, minimum height=11mm, inner sep=4pt},
-  hl/.style={box, fill=acc!10, draw=acc!80!black, minimum height=22mm, text width=25mm},
-  arr/.style={-{Latex[length=2mm]}, black!65}]
-\node[hl] (att) {Bước 1\\ Cross-attention\\ 8 đầu, mỗi đầu 128 chiều\\[2pt] {\scriptsize weight $a_{kj}$ trên 67 token}};
-\node[box, left=12mm of att, yshift=14mm, text width=27mm] (tok) {67 token\\ (CLS và 66 ảnh)\\ ma trận $X$, 67×1024};
-\node[box, left=12mm of att, yshift=-14mm, text width=27mm] (q) {40 query học được\\ $q_k$, mỗi query 1024 số};
-\node[hl, right=of att, text width=21mm] (mlp) {Bước 2\\ MLP\\ 1024 → 2048 → 1024};
-\node[hl, right=of mlp, text width=24mm] (cls) {Bước 3\\ Classifier riêng\\ $z_k = w_k^\top h'_k + c_k$};
-\node[box, right=of cls] (z) {40 logit\\ $z_1,\dots,z_{40}$};
-\draw[arr] (tok.east) -- node[above, sloped, font=\sffamily\scriptsize] {khoá, giá trị} (att.north west);
-\draw[arr] (q.east) -- node[below, sloped, font=\sffamily\scriptsize] {query} (att.south west);
-\draw[arr] (att) -- node[above, font=\sffamily\scriptsize] {$h_k$} (mlp);
-\draw[arr] (mlp) -- node[above, font=\sffamily\scriptsize] {$h'_k$} (cls);
-\draw[arr] (cls)--(z);
-\end{tikzpicture}
-\caption{Query head với một layer. Mỗi thuộc tính có một query riêng đọc các token bằng cross-attention, qua một MLP dùng chung, rồi qua một classifier (tạm dịch: bộ phân loại) riêng của thuộc tính đó. Hai phép cộng tắt (residual) và các lớp chuẩn hoá được lược bỏ trong hình.}
+\includegraphics[width=.92\linewidth]{query_reading.png}
+\caption{Bốn query của mô hình nộp bài đọc cùng một ảnh PETA. Cột trái là attention weight trên 66 patch, ba patch có weight lớn nhất được viền xanh. Ba cột giữa phóng to đúng ba patch đó. Query mũ đọc vùng đỉnh đầu, query ba lô đọc quai đeo trước ngực, query quần đen đọc hai ống quần. Cột phải là xác suất cuối cùng sau MLP và classifier, nét đứt là threshold 0.5.}
 \label{fig:qhead}
 \end{figure}
 
@@ -277,11 +251,11 @@ DINOv3-L có AUC cao nhất trong nhóm cỡ L. CLIP-L có Avg nhỉnh hơn 0.00
 \begin{equation}
 a_{kj}=\frac{\exp\big(Q_k^\top K_j/\sqrt{d}\big)}{\sum_{j'}\exp\big(Q_k^\top K_{j'}/\sqrt{d}\big)},
 \end{equation}
-với $d$ là số chiều của mỗi attention head. Tử số lớn khi query và token giống nhau trong không gian so sánh. Mẫu số chuẩn hoá để 67 weight cộng lại bằng 1. Kết quả của bước này là $h_k=q_k+W_O\sum_j a_{kj}V_j$. Vector $h_k$ là query cộng thêm tổng có weight của các token. Phép cộng $q_k$ vào là một \textbf{residual}, giữ lại thông tin ban đầu của query. Phép tính được làm song song ở 8 \textbf{attention head}, mỗi đầu 128 chiều, để mỗi đầu có thể chú ý vào một kiểu tín hiệu khác nhau, ví dụ một đầu theo màu, một đầu theo hình dạng.
+với $d$ là số chiều của mỗi attention head. Tử số lớn khi query và token giống nhau trong không gian so sánh. Mẫu số chuẩn hoá để 67 weight cộng lại bằng 1. Kết quả của bước này là $h_k=q_k+W_O\sum_j a_{kj}V_j$. Vector $h_k$ là query cộng thêm tổng có weight của các token. Phép cộng $q_k$ vào là một \textbf{residual}, giữ lại thông tin ban đầu của query. Ở Hình~\ref{fig:qhead}, cột trái chính là 66 weight $a_{kj}$ của các token ảnh, trung bình trên 8 attention head, và ba patch phóng to là ba số hạng lớn nhất trong tổng $\sum_j a_{kj}V_j$. Phép tính được làm song song ở 8 \textbf{attention head}, mỗi đầu 128 chiều, để mỗi đầu có thể chú ý vào một kiểu tín hiệu khác nhau, ví dụ một đầu theo màu, một đầu theo hình dạng.
 
 \textit{Bước 2, MLP.} Vector $h_k$ đi qua một mạng hai lớp mở rộng từ 1024 lên 2048 chiều rồi thu về 1024 chiều, với một residual nữa, cho $h'_k$. Bước này cho phép kết hợp phi tuyến các tín hiệu đã gom được ở bước 1.
 
-\textit{Bước 3, classifier riêng.} Mỗi thuộc tính có một vector weight $w_k$ và một số chặn $c_k$ riêng, và $z_k = w_k^\top h'_k + c_k$. Classifier riêng cho phép mỗi thuộc tính đọc các chiều khác nhau của $h'_k$.
+\textit{Bước 3, classifier riêng.} Mỗi thuộc tính có một vector weight $w_k$ và một số chặn $c_k$ riêng, và $z_k = w_k^\top h'_k + c_k$. Classifier riêng cho phép mỗi thuộc tính đọc các chiều khác nhau của $h'_k$. Hai bước 2 và 3 ứng với mũi tên thứ hai ở mỗi hàng của Hình~\ref{fig:qhead}, nối từ các patch đã đọc tới xác suất. Hai residual và các lớp chuẩn hoá không được vẽ trong hình.
 
 \textit{Kích thước và chi phí.} Ma trận chiếu của cross-attention có khoảng 4,2 triệu parameter, MLP có khoảng 4,2 triệu, còn 40 query và 40 classifier chỉ có khoảng 80 nghìn. Toàn bộ head có khoảng 8,5 triệu parameter, so với khoảng 300 triệu của ViT-L, và chiếm khoảng 2\% số phép tính của một lần inference. Linear head chỉ có khoảng 82 nghìn parameter.
 
@@ -305,7 +279,16 @@ Xác suất $\sigma(z)$ & 0.018 & 0.047 & 0.269 & 0.500 & 0.731 & 0.953 & 0.982 
 \label{tab:logit}
 \end{table}
 
-Sigmoid đồng biến, nên ảnh có logit cao hơn luôn có xác suất cao hơn, và thứ tự các ảnh không đổi khi đi qua sigmoid. Cộng một số $o$ vào logit trước sigmoid tương đương dời threshold logit từ 0 sang $-o$. Đây là cơ chế mà các cách đặt threshold ở mục~\ref{sec:measure} và~\ref{sec:thr} sử dụng. Trong các hình của báo cáo, chúng tôi vẽ theo logit vì ở hai đầu, xác suất dồn sát 0 và 1 nên khó nhìn, còn logit trải đều hơn.
+Sigmoid đồng biến, nên ảnh có logit cao hơn luôn có xác suất cao hơn, và thứ tự các ảnh không đổi khi đi qua sigmoid. Cộng một số $o$ vào logit trước sigmoid tương đương dời threshold logit từ 0 sang $-o$. Đây là cơ chế mà các cách đặt threshold ở mục~\ref{sec:measure} và~\ref{sec:thr} sử dụng.
+
+Hình~\ref{fig:sigpeople} đặt bảy người thật lên đường sigmoid theo logit mũ của mô hình nộp bài. Mô hình này cộng $0.89$ vào logit mũ trước khi cắt, tương đương dời threshold logit từ 0 sang $-0.89$. Hai người có logit $-0.35$ và $-0.32$ nằm trong dải tô màu giữa hai threshold. Người thứ nhất đội mũ, người thứ hai không. Ở threshold 0.5, cả hai bị đoán không có mũ. Sau khi dời, cả hai được đoán có mũ. Dời threshold vì vậy sửa được một lỗi và tạo ra một lỗi mới, và việc dời có lợi hay không phụ thuộc vào số người có và không có thuộc tính rơi vào dải đó. Hình cũng cho thấy một lỗi mà không threshold nào sửa được. Người đội mũ có logit $-2.1$ đứng dưới người không đội mũ có logit $-0.3$. Để bắt được người thứ nhất, threshold phải hạ xuống dưới $-2.1$, và khi đó người thứ hai cũng bị đoán có mũ. Lỗi này nằm ở thứ tự, là lỗi ranking, và mục~\ref{sec:two} sẽ tách hai loại lỗi này một cách định lượng.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{sigmoid_people.png}
+\caption{Bảy người của PETA đặt trên đường sigmoid theo logit mũ. Viền và chấm đặc màu cam là label có mũ, viền và vòng rỗng màu xanh là label không có mũ. Nét đứt đen là threshold 0.5. Nét đứt cam là threshold sau khi mô hình nộp bài dời logit mũ thêm 0.89. Hai người trong dải tô màu đổi quyết định khi dời threshold, còn thứ tự của bảy người thì không đổi.}
+\label{fig:sigpeople}
+\end{figure} Trong các hình của báo cáo, chúng tôi vẽ theo logit vì ở hai đầu, xác suất dồn sát 0 và 1 nên khó nhìn, còn logit trải đều hơn.
 
 \subsection{Loss và vì sao nó dời logit}
 \label{sec:loss}
@@ -588,6 +571,15 @@ Chúng tôi chọn 176×96 vì đây là cấu hình lớn nhất còn chạy k�
 Độ chính xác của mô hình được ghép dự báo gần như hoàn hảo lợi ích của cặp (hệ số tương quan hạng Spearman 0.93). Độ tương quan logit chỉ có tác dụng phụ khi đã tính tới độ chính xác. Ví dụ, một bản DINOv3-L thứ hai ở 224×112 chính xác ngang CLIP-L (0.8061 so với 0.8063), nhưng logit của nó gần như trùng với DINOv3-L gốc (tương quan 0.956), nên ghép vào chỉ tăng 0.0047 thay vì 0.0108 của CLIP-L. Hệ quả thực tế là nên chọn mô hình chính xác nhất thuộc một họ pretrain khác. Chúng tôi chọn CLIP-L~\cite{clip}, học từ cặp ảnh và văn bản.
 
 \paragraph{Distillation.} Mỗi teacher được fine-tune 3 epoch. Khi huấn luyện student, mỗi batch ảnh đã augmentation được đưa qua từng teacher ở resolution riêng của teacher. Logit của hai teacher được lấy trung bình thành $\bar z^{T}$. Loss của student là $(1-\alpha)\mathcal{L}_{\text{nhãn}} + \alpha\,\mathrm{BCE}\big(\sigma(z),\sigma(\bar z^{T})\big)$ với $\alpha=0.8$. Số hạng thứ nhất là loss label ở mục~\ref{sec:loss}. Số hạng thứ hai đo khoảng cách giữa xác suất của student và xác suất trung bình của hai teacher. Hệ số $\alpha=0.8$ cho student (tạm dịch: mô hình trò) học chủ yếu từ teacher.
+
+Hình~\ref{fig:distill} so sánh hai loại mục tiêu trên ba ảnh PETA. Để hình phản ánh đúng tình huống camera mới, hai teacher trong hình là bản được huấn luyện mà không thấy PETA. Label luôn là 0 hoặc 1, kể cả khi ảnh không đủ rõ để kết luận. Mục tiêu mềm thì phản ánh mức chắc chắn. Ở người thứ nhất, label nói áo đen, còn hai teacher cho xác suất áo đen dưới 0.3 vì áo có sọc đen trắng. Ở người thứ hai, một em bé ngồi trong xe đẩy, hai teacher bất đồng về giới tính (0.92 so với 0.04), và mục tiêu mềm dừng ở 0.43. Ở người thứ ba, ảnh nhoè và bị che, cả hai teacher cho xác suất nữ quanh 0.47. Student học từ mục tiêu mềm vì vậy bị phạt ít hơn khi lưỡng lự đúng ở những ảnh khó, và bị phạt nhiều hơn khi tự tin sai.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{distill_targets.png}
+\caption{Label và mục tiêu mềm trên ba ảnh PETA. Thanh xám là label. Thanh xanh lục và tím là xác suất của hai teacher được huấn luyện không có PETA. Thanh cam là mục tiêu mềm, sigmoid của trung bình hai logit. Mục tiêu mềm nằm giữa 0 và 1 ở những thuộc tính mà ảnh không đủ rõ hoặc hai teacher bất đồng.}
+\label{fig:distill}
+\end{figure}
 
 \begin{table}[H]
 \centering\small
