@@ -5,6 +5,7 @@ and the scoring-function / temperature measurements of 2026-10-02 and 2026-10-04
 import sys
 from pathlib import Path
 
+import json
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -61,18 +62,26 @@ VAR = [("ViT-L 256 tuyến tính", .9126, 6.569, .6697), ("ViT-B truy vấn + gr
 
 
 def fig_auc_nll():
-    fig, axs = plt.subplots(1, 2, figsize=(7.2, 2.7), sharey=True)
-    a = np.array([[v[1], v[2], v[3]] for v in VAR])
-    for ax, x, lab in ((axs[0], a[:, 0], "AUC trung bình (PETA giấu)"), (axs[1], a[:, 1], "NLL trên một ảnh (thấp là tốt)")):
-        ax.scatter(x, a[:, 2], s=22, color=BLUE, edgecolor="white", lw=.6, zorder=3)
-        r = np.corrcoef(x, a[:, 2])[0, 1]
-        ax.set_xlabel(lab); ax.set_title(f"hệ số tương quan Pearson r = {r:+.2f}", fontsize=8.4, loc="left")
-    axs[1].invert_xaxis()
-    axs[0].set_ylabel("mADM (xếp hạng log-likelihood)")
-    for name, auc, nll, m in VAR:
-        if name in ("ViT-L 256 tuyến tính", "ViT-B truy vấn + group CE", "ViT-B truy vấn, 3 epoch", "ViT-L 160 tuyến tính"):
-            axs[1].annotate(name, (nll, m), xytext=(4, -3), textcoords="offset points", fontsize=6.4)
-    fig.tight_layout(); fig.savefig(FIG / "auc_nll.png"); plt.close(fig)
+    """mADM theo AUC, NLL và tiêu chí listwise trên các lần chạy giấu PETA có lưu logit (report_review/analysis/t12_runs.json)."""
+    from scipy.stats import spearmanr
+    d = json.load(open(ROOT.parent / "report_review/analysis/t12_runs.json"))
+    runs = {k: v for k, v in d.items() if v["held"] == "PETA" and k != "clipL_168_PETA"}
+    fam = lambda k: "ViT-B (và cỡ B)" if k.startswith(("b_", "na_", "clean_", "cnxB", "eva02B")) else (
+        "DINOv3 ViT-L" if k.startswith(("L176", "T_dino", "Lk18", "kd")) else "encoder cỡ L khác")
+    cols = {"ViT-B (và cỡ B)": ORANGE, "DINOv3 ViT-L": BLUE, "encoder cỡ L khác": GRAY}
+    fig, axs = plt.subplots(1, 3, figsize=(7.4, 2.6), sharey=True)
+    for ax, key, lab in ((axs[0], "auc", "AUC trung bình"), (axs[1], "nll", "NLL trên một ảnh (nats)"),
+                         (axs[2], "listwise", "log-likelihood listwise của ảnh khớp")):
+        for f, c in cols.items():
+            r = [v for k, v in runs.items() if fam(k) == f]
+            ax.scatter([v[key] for v in r], [v["madm"] for v in r], s=14, color=c, edgecolor="white", lw=.5, zorder=3,
+                       label=f if key == "auc" else None)
+        x = np.array([v[key] for v in runs.values()]); y = np.array([v["madm"] for v in runs.values()])
+        b = np.array([fam(k).startswith("ViT-B") for k in runs])
+        ax.set_title(f"ρ = {spearmanr(x, y).correlation:+.2f} (ViT-B {spearmanr(x[b], y[b]).correlation:+.2f})", fontsize=8, loc="left")
+        ax.set_xlabel(lab, fontsize=8)
+    axs[1].invert_xaxis(); axs[0].set_ylabel("mADM"); axs[0].legend(frameon=False, fontsize=6.6, loc="lower right")
+    fig.tight_layout(w_pad=.6); fig.savefig(FIG / "auc_nll.png"); plt.close(fig)
 
 
 # mADM (log-likelihood ranking) as a function of the temperature, one line per run; 2026-10-04 measurements.
@@ -204,7 +213,7 @@ GROUPS = [("Tuổi", range(0, 3)), ("Giới tính", [3]), ("Tóc", range(4, 7)),
 
 def fig_nll_groups():
     """Per-group share of the full-vector NLL on held-out PETA, ViT-B query vs ViT-L distilled (seen-domain NLL too)."""
-    runs = [("remote/b_q_PETA_s1", "ViT-B truy vấn", GRAY), ("remote/b_q_gce_PETA_s2", "ViT-B truy vấn + group CE", ORANGE),
+    runs = [("remote/b_q_PETA_s2", "ViT-B truy vấn", GRAY), ("remote/b_q_gce_PETA_s2", "ViT-B truy vấn + group CE", ORANGE),
             ("remote2/kd2_a08_e6_PETA", "ViT-L KD 2 thầy", BLUE)]
     fig, ax = plt.subplots(figsize=(7.2, 2.7))
     w = .26
