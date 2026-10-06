@@ -34,13 +34,13 @@
 \begin{document}
 
 \begin{center}
-{\sffamily\bfseries\LARGE Ước lượng tư thế người đi bộ trên miền ảnh giám sát chưa thấy:\\[2pt] tinh chỉnh ViTPose+, gộp heatmap và học lại điểm tin cậy}\\[8pt]
+{\sffamily\bfseries\LARGE Mỗi người một dự đoán: điểm tin cậy đáng giá bao nhiêu\\[2pt] với OKS AP trên camera giám sát chưa thấy}\\[8pt]
 {\large Báo cáo kỹ thuật, UPAR Challenge 2027, Track 3 (2D Human Pose Estimation)}\\[6pt]
-{\small Tài khoản Codabench \texttt{tannguyenbmt47} \quad Ngày 04/10/2026}
+{\small Tài khoản Codabench \texttt{tannguyenbmt47} \quad Cập nhật ngày 06/10/2026}
 \end{center}
 
 \begin{abstract}
-\noindent Track 3 của UPAR Challenge 2027 yêu cầu dự đoán 17 điểm khớp theo định dạng PoseTrack18 cho mỗi khung người cho trước trong ảnh camera giám sát, được chấm bằng OKS AP trên 30.245 khung người của một miền ảnh không có trong dữ liệu huấn luyện. Luật thi chỉ cho phép tiền huấn luyện trên COCO và PoseTrack18 và cấm mô hình nền tảng. Hệ thống của chúng tôi đạt 0.8992 OKS AP trên tập chấm ẩn, so với 0.6238 của bài mẫu do ban tổ chức cung cấp. Ba bước tạo ra kết quả này. Thứ nhất, tinh chỉnh ViTPose+ trên khoảng 42,7 nghìn người có nhãn tư thế của ba bộ dữ liệu UPAR nâng AP trên miền giấu từ khoảng 0.70 lên khoảng 0.93. Thứ hai, lấy trung bình heatmap của mô hình large và huge tăng thêm 0.0019 trên tập chấm. Thứ ba, chúng tôi học lại điểm tin cậy của từng người. Lý do là OKS AP xếp hạng mọi dự đoán theo điểm này, và điểm mặc định (trung bình 17 cực đại heatmap) chỉ tương quan thứ hạng 0.52 với độ chính xác thật. Một bộ hồi quy cây tăng cường trên 87 đặc trưng của heatmap, huấn luyện theo giao thức giấu từng bộ dữ liệu, nâng tương quan này lên 0.63 và tăng AP trung bình 0.0015 trên ba miền giấu mà không thay đổi bất kỳ toạ độ khớp nào. Trên tập chấm, mức tăng đo được cũng đúng 0.0015. Báo cáo phân tích vì sao một mô hình lớn hơn khớp dữ liệu đã thấy kém hơn nhưng lại tổng quát hoá tốt hơn, khoảng cách còn lại giữa điểm tin cậy học được và điểm tin cậy lý tưởng, và các hướng đã cân nhắc nhưng bị loại theo luật thi.
+\noindent Khi khung người được cho sẵn, một mô hình ước lượng tư thế top-down đưa ra đúng một dự đoán cho mỗi người, và OKS AP của COCO khi đó phụ thuộc vào hai thứ: mỗi dự đoán chính xác đến đâu, và \textbf{điểm tin cậy} (confidence score) xếp các dự đoán theo đúng thứ tự đến đâu. Chúng tôi chỉ ra rằng trong tình huống này, AP ở mỗi ngưỡng OKS nằm giữa $f_t^2$ và $f_t$, với $f_t$ là tỉ lệ dự đoán đúng, và hai cận này khớp với AP của một điểm không chứa thông tin và của một điểm hoàn hảo trên dữ liệu thật. Chúng tôi đo cả hai yếu tố trên UPAR 2027 Track~3 với các mô hình ViTPose++ được đánh giá trên bộ dữ liệu giấu. Giữ nguyên toạ độ khớp, một điểm tin cậy hoàn hảo sẽ thêm 1,3 đến 1,5 điểm AP, nhiều hơn việc gộp heatmap của mô hình thứ hai (0,1 đến 0,5 điểm). Phần lớn giá trị này nằm ở việc tách dự đoán rất tốt khỏi dự đoán tốt, ở ngưỡng OKS 0.95, chứ không ở việc đẩy các dự đoán hỏng xuống cuối. Điểm mặc định, trung bình các cực đại heatmap, tính cả hai kênh tai, vốn không bao giờ được gán nhãn trong định dạng này. Bỏ hai kênh đó đã lấy lại phần lớn mức tăng của một bộ chấm cây tăng cường học trên thống kê heatmap, còn chính bộ chấm đó, được kiểm chứng giấu bộ dữ liệu ở cả hai tầng, lấy lại 12 đến 30\% mức tăng của điểm lý tưởng. Trên tập chấm, nó thêm 0,15 điểm, nằm trong khoảng dự báo từ miền giấu. Hai phép đo nữa thay đổi cách nhìn về nguồn lỗi. Tinh chỉnh trông như đáng giá 23 điểm, nhưng trên các khớp chung của COCO và PoseTrack nó chỉ đáng 0,7 điểm, nên phần lớn mức tăng đó là học định nghĩa điểm khớp vùng đầu. Và lỗi nhầm trái phải chỉ ảnh hưởng 1,3\% số người trong PETA, nhưng sửa được chúng sẽ thêm 1,65 điểm, nhiều hơn cả một điểm tin cậy hoàn hảo. Hệ thống đạt 0.8992 AP trên tập chấm ẩn, so với 0.8813 của một mô hình ViTPose++ base tinh chỉnh.
 \end{abstract}
 
 \tableofcontents
@@ -51,15 +51,15 @@
 
 Ước lượng tư thế người 2D xác định toạ độ các điểm khớp như vai, khuỷu tay, hông, đầu gối trên ảnh. Trong giám sát, tư thế là đầu vào cho nhận dạng hành động, theo vết người qua nhiều camera và phân tích hành vi. Các hệ thống hiện đại theo cách tiếp cận top-down đạt độ chính xác cao trên các bộ dữ liệu chuẩn như COCO~\cite{coco}. Một bộ dò người tìm khung bao, rồi một mạng ước lượng tư thế xử lý từng khung~\cite{simplebaseline,hrnet,vitpose}.
 
-Ảnh giám sát khác COCO ở ba điểm. Người trong ảnh nhỏ, thường chỉ 64 đến 128 pixel chiều cao. Ảnh mờ, nén mạnh và có màu lệch. Góc nhìn từ trên cao và người hay bị che khuất bởi người khác. Track 3 của UPAR Challenge 2027 đánh giá đúng tình huống này. Khung người được cho sẵn, nên bài toán chỉ còn bước ước lượng tư thế, nhưng tập chấm lấy từ một miền camera không có trong dữ liệu huấn luyện.
+Ảnh giám sát khác COCO ở ba điểm. Người trong ảnh nhỏ: trung vị chiều cao khung là 149 pixel ở PETA, 205 ở PA100k và 128 ở Market1501. Ảnh mờ, nén mạnh và có màu lệch. Góc nhìn từ trên cao và người hay bị che khuất bởi người khác. Track 3 của UPAR Challenge 2027 đánh giá đúng tình huống này. Khung người được cho sẵn, nên bài toán chỉ còn bước ước lượng tư thế, nhưng tập chấm lấy từ một miền camera không có trong dữ liệu huấn luyện.
 
-Báo cáo này trình bày hệ thống của chúng tôi và quá trình dẫn tới nó. Các đóng góp chính gồm bốn điểm.
+Vì khung người được cho sẵn, mỗi người nhận đúng một dự đoán. Điều đó thay đổi thứ mà chỉ số thưởng: điểm tin cậy không còn chọn giữa nhiều tư thế ứng viên, mà chỉ quyết định thứ tự duyệt một tập dự đoán cố định. Báo cáo đo phần giá trị này, thiết kế một điểm tin cậy dựa trên phép đo đó, và hỏi lỗi còn lại nằm ở đâu. Các đóng góp chính gồm bốn điểm.
 
 \begin{enumerate}[leftmargin=1.4em]
-\item Một giao thức thẩm định giấu từng bộ dữ liệu cho tư thế, cho thấy tinh chỉnh trên dữ liệu UPAR là bước quan trọng nhất (AP từ 0.70 lên 0.93) và cỡ mô hình cùng phép gộp heatmap cho thêm các bước nhỏ nhưng ổn định (mục~\ref{sec:lodo}).
-\item Một quan sát rằng mô hình huge khớp dữ liệu đã thấy kém hơn mô hình large nhưng tổng quát hoá tốt hơn trên cả miền giấu lẫn tập chấm. Do đó điểm trên dữ liệu đã thấy không dùng được để chọn mô hình (mục~\ref{sec:size}).
-\item Một phân tích về vai trò của điểm tin cậy trong OKS AP. Trên ba miền giấu, đổi từ điểm hằng số sang điểm tin cậy mặc định tăng AP 0.024, và đổi sang điểm tin cậy lý tưởng tăng thêm 0.0135 (mục~\ref{sec:score}).
-\item Một bộ chấm lại điểm tin cậy nhẹ, không cần huấn luyện lại mô hình tư thế, có lợi ích dự báo trên giao thức thẩm định khớp chính xác với lợi ích đo được trên tập chấm (mục~\ref{sec:rescore} và~\ref{sec:test}).
+\item Một phân tích AP khi mỗi khung có một dự đoán, với hai cận $f_t^2$ và $f_t$ được kiểm chứng trên dữ liệu giấu (mục~\ref{sec:metric}).
+\item Một phép đo giá trị của điểm tin cậy theo từng bộ dữ liệu và từng ngưỡng, cho thấy giá trị chủ yếu nằm ở việc sắp các dự đoán tốt, không ở việc loại các dự đoán hỏng (mục~\ref{sec:score}).
+\item Một bộ chấm lại điểm tin cậy được kiểm chứng giấu bộ dữ liệu ở cả hai tầng, cùng phát hiện rằng chỉ cần bỏ hai kênh tai khỏi điểm mặc định đã thu được phần lớn lợi ích của nó (mục~\ref{sec:rescore}).
+\item Hai điều chỉnh cho cách đọc quen thuộc: phần lớn mức tăng của tinh chỉnh là hiệu ứng định nghĩa điểm khớp, và lỗi nhầm trái phải tốn nhiều AP hơn cả khoảng cách tới điểm tin cậy lý tưởng trên PETA (mục~\ref{sec:lodo} và~\ref{sec:errors}).
 \end{enumerate}
 
 %=====================================================================
@@ -100,11 +100,30 @@ với $s^2$ là diện tích của người, $\kappa_k=2\sigma_k$ là hằng s�
 
 \paragraph{AP.} Với một ngưỡng $t$, một dự đoán được coi là đúng nếu OKS của nó với nhãn vượt $t$. Mọi dự đoán của toàn tập chấm được xếp theo điểm tin cậy giảm dần, rồi precision và recall được tính dọc theo danh sách đó. AP ở ngưỡng $t$ là diện tích dưới đường precision theo recall. OKS AP là trung bình của AP ở 10 ngưỡng $t\in\{0.50,0.55,\dots,0.95\}$~\cite{coco}.
 
-\paragraph{Vai trò của điểm tin cậy.} Trong bài toán này mỗi khung có đúng một người và một dự đoán. Nếu điểm tin cậy được sắp đúng theo OKS, mọi dự đoán đúng ở ngưỡng $t$ đứng trước mọi dự đoán sai. Precision khi đó bằng 1 cho tới khi hết dự đoán đúng, và AP ở ngưỡng $t$ bằng tỉ lệ dự đoán đúng $f_t$. Nếu điểm tin cậy không chứa thông tin, dự đoán đúng và sai xen kẽ ngẫu nhiên, precision ở mọi độ sâu xấp xỉ $f_t$, và AP xấp xỉ $f_t^2$. Với $f_t=0.8$, khoảng cách giữa hai trường hợp là 0.16. Vì vậy cùng một tập toạ độ khớp có thể cho AP khác nhau đáng kể tuỳ cách gán điểm tin cậy. Mục~\ref{sec:score} đo khoảng cách này trên dữ liệu thật.
+\paragraph{Vai trò của điểm tin cậy.} Trong bài toán này mỗi khung có đúng một người và một dự đoán. Nếu điểm tin cậy được sắp đúng theo OKS, mọi dự đoán đúng ở ngưỡng $t$ đứng trước mọi dự đoán sai. Precision khi đó bằng 1 cho tới khi hết dự đoán đúng, và AP ở ngưỡng $t$ bằng tỉ lệ dự đoán đúng $f_t$. Nếu điểm tin cậy không chứa thông tin, dự đoán đúng và sai xen kẽ ngẫu nhiên, precision ở mọi độ sâu xấp xỉ $f_t$, và AP xấp xỉ $f_t^2$. Với $f_t=0.8$, khoảng cách giữa hai trường hợp là 0.16. Vì vậy cùng một tập toạ độ khớp có thể cho AP khác nhau đáng kể tuỳ cách gán điểm tin cậy.
+
+Bảng~\ref{tab:bounds} kiểm tra hai cận trên dự đoán của mô hình huge giấu từng bộ dữ liệu. Trung bình của $f_t^2$ cách AP của điểm hằng số không quá nửa điểm ở cả ba bộ. Trung bình của $f_t$ cao hơn AP của điểm lý tưởng khoảng 0.4 đến 0.5 điểm, do cách nội suy 101 điểm của COCO. Hai cận cũng cho thấy điểm tin cậy có thể quan trọng ở đâu: $f_t$ còn ít nhất 0.95 ở mọi ngưỡng tới 0.85, rồi giảm còn 0.69 đến 0.76 ở 0.95.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Bộ giấu & PETA & PA100k & Market1501 \\
+\midrule
+$f_{0.50}$ / $f_{0.85}$ / $f_{0.95}$ & 0.991 / 0.950 / 0.759 & 0.990 / 0.961 / 0.690 & 0.998 / 0.972 / 0.705 \\
+trung bình $f_t^2$ & 0.9041 & 0.9033 & 0.9241 \\
+AP, điểm hằng số & 0.9050 & 0.9006 & 0.9200 \\
+trung bình $f_t$ & 0.9485 & 0.9464 & 0.9574 \\
+AP, OKS thật làm điểm & 0.9436 & 0.9426 & 0.9525 \\
+\bottomrule
+\end{tabular}
+\caption{Hai cận của chế độ một dự đoán cho mỗi người, so với AP đo được (mô hình huge, giữ nguyên toạ độ khớp).}
+\label{tab:bounds}
+\end{table}
 
 \subsection{Ràng buộc và luật thi}
 
-Bài nộp là chương trình. Máy chấm có GPU và cho phép tối đa 7200 giây cho 30.245 khung người. Môi trường chấm có PyTorch 2.4.1, numpy và Pillow, không có OpenCV, scikit-learn hay mạng. Luật thi cho phép tiền huấn luyện trên COCO và PoseTrack18, cấm dữ liệu tiền huấn luyện ngoài và mô hình nền tảng, và cấm dùng ảnh chấm cho huấn luyện, gán nhãn giả hay chọn siêu tham số. Ban tổ chức cung cấp một bài mẫu dùng ViTPose+ small không tinh chỉnh, đạt 0.6238 trên tập chấm.
+Bài nộp là chương trình. Máy chấm có GPU và cho phép tối đa 7200 giây cho 30.245 khung người. Môi trường chấm có PyTorch 2.4.1, numpy và Pillow, không có OpenCV, scikit-learn hay mạng. Luật thi cho phép tiền huấn luyện trên COCO và PoseTrack18, cấm dữ liệu tiền huấn luyện ngoài và mô hình nền tảng, và cấm dùng ảnh chấm cho huấn luyện, gán nhãn giả hay chọn siêu tham số. Ban tổ chức cung cấp một bài mẫu dùng ViTPose+ small không tinh chỉnh, đạt 0.6238 trên tập chấm. Các checkpoint ViTPose+ công khai được huấn luyện trên nhiều bộ dữ liệu tư thế và khởi tạo từ MAE trên ImageNet. Chúng tôi dùng họ mô hình này vì bài mẫu chính thức của ban tổ chức dùng nó, và hiểu đó là sự cho phép; nếu cách hiểu này sai, kết quả của chúng tôi sẽ không hợp lệ. Vì cùng lý do luật thi, chúng tôi không dùng DINOv3 hay chưng cất từ bất kỳ mô hình nền tảng nào cho track này.
 
 \begin{ghichu}
 OKS AP đo hai thứ cùng lúc, gồm độ chính xác của toạ độ khớp và khả năng của điểm tin cậy trong việc xếp dự đoán tốt lên trước dự đoán kém. Thành phần thứ hai thường bị bỏ qua, nhưng nó cải thiện được mà không cần đụng vào mô hình tư thế.
@@ -117,7 +136,7 @@ OKS AP đo hai thứ cùng lúc, gồm độ chính xác của toạ độ khớ
 
 \paragraph{Mã hoá và giải mã heatmap.} UDP~\cite{udp} chỉ ra sai lệch hệ thống trong các phép biến đổi toạ độ giữa ảnh, khung cắt và heatmap, và đề xuất dùng quy ước tâm pixel. DARK~\cite{dark} giải mã toạ độ dưới mức ô lưới bằng khai triển Taylor bậc hai của logarit heatmap đã làm mượt, thay cho phép dời một phần tư ô truyền thống. Chúng tôi dùng cả hai.
 
-\paragraph{Điểm tin cậy của dự đoán tư thế.} Papandreou và cộng sự~\cite{gpose} tính điểm tin cậy của một người từ các cực đại heatmap thay vì chỉ dùng điểm của bộ dò người. Ronchi và Perona~\cite{ronchi} phân tích lỗi của OKS AP và chỉ ra rằng điểm tin cậy kém hiệu chỉnh là một nguồn mất AP đáng kể. Gần đây, Gu và cộng sự~\cite{ccnet} đề xuất CCNet, một nhánh nhẹ dự đoán OKS từ đặc trưng của mạng tư thế, tăng 0.8 AP cho ViTPose-B trên COCO mà không huấn luyện lại mô hình chính. Phương pháp của chúng tôi cùng ý tưởng nhưng chỉ dùng thống kê của heatmap đầu ra, nên chạy được bên ngoài mô hình đã đóng gói.
+\paragraph{Điểm tin cậy của dự đoán tư thế.} Papandreou và cộng sự~\cite{gpose} tính điểm tin cậy của một người từ các cực đại heatmap thay vì chỉ dùng điểm của bộ dò người. Ronchi và Perona~\cite{ronchi} phân tích lỗi của OKS AP và chỉ ra rằng điểm tin cậy kém hiệu chỉnh là một nguồn mất AP đáng kể. Gần đây, Gu và cộng sự~\cite{ccnet} đề xuất CCNet, một nhánh nhẹ dự đoán OKS từ đặc trưng của mạng tư thế, tăng 0.8 AP cho ViTPose-B trên COCO mà không huấn luyện lại mô hình chính. DEKR~\cite{dekr} cũng huấn luyện một mạng nhỏ trên toạ độ dự đoán để ước lượng OKS. Phương pháp của chúng tôi cùng ý tưởng nhưng chỉ dùng thống kê của heatmap đầu ra, nên chạy được bên ngoài mô hình đã đóng gói, và được kiểm chứng trên miền giấu thay vì trên phân bố huấn luyện.
 
 \paragraph{Tổng quát hoá miền cho tư thế.} Các công trình thích nghi miền cho tư thế thường dùng ảnh không nhãn của miền đích để gán nhãn giả và tự huấn luyện. Luật thi cấm dùng ảnh chấm theo cách này, nên chúng tôi không đi theo hướng đó.
 
@@ -166,7 +185,7 @@ Hình~\ref{fig:pipe} tóm tắt hệ thống của bài nộp tốt nhất (v6).
 
 \paragraph{Mục tiêu và hàm mất mát.} Mỗi khớp có nhãn tạo một heatmap mục tiêu Gauss với $\sigma=2$ ô lưới tại toạ độ đã ánh xạ. Hàm mất mát là sai số bình phương trung bình giữa heatmap dự đoán và heatmap mục tiêu, nhân với trọng số khả kiến của từng khớp (bằng 0 cho khớp không có nhãn hoặc nằm ngoài khung cắt), rồi nhân 1000 để có độ lớn gradient phù hợp.
 
-\paragraph{Tăng cường dữ liệu.} Khi huấn luyện, kích thước vùng cắt được nhân một hệ số ngẫu nhiên trong $[0.75,1.25]$, tâm được dời tối đa 8\% kích thước, ảnh được xoay ngẫu nhiên tới $\pm40°$ với xác suất 0.4, lật ngang với xác suất 0.5 (kèm hoán đổi các cặp khớp trái và phải), và với xác suất 0.8 thay đổi độ sáng và độ tương phản.
+\paragraph{Tăng cường dữ liệu.} Khi huấn luyện, kích thước vùng cắt được nhân một hệ số ngẫu nhiên trong $[0.75,1.25]$, tâm được dời tối đa 8\% kích thước, ảnh được xoay với góc lấy từ phân phối Gauss độ lệch chuẩn $30°$, cắt ở $\pm40°$, với xác suất 0.4, lật ngang với xác suất 0.5 (kèm hoán đổi các cặp khớp trái và phải), và với xác suất 0.8 thay đổi độ sáng và độ tương phản.
 
 \paragraph{Huấn luyện.} AdamW, learning rate $5\cdot10^{-5}$ ở tầng cuối với layer decay 0.75, weight decay 0.1 trừ tham số chuẩn hoá và vị trí, warmup 300 bước rồi lịch cosine, batch 64, tính toán bf16. Mô hình nộp bài học 5 epoch trên cả ba bộ dữ liệu. Mô hình thẩm định học 2 epoch trên hai bộ, vì AP trên miền giấu bão hoà sau epoch đầu (Bảng~\ref{tab:epochs}).
 
@@ -175,7 +194,7 @@ Hình~\ref{fig:pipe} tóm tắt hệ thống của bài nộp tốt nhất (v6).
 
 \paragraph{Kiểm tra lật.} Mỗi khung được chạy hai lần, trên ảnh gốc và ảnh lật ngang. Heatmap của ảnh lật được lật lại và hoán đổi các cặp khớp trái và phải, rồi lấy trung bình với heatmap của ảnh gốc.
 
-\paragraph{Gộp mô hình.} Với nhiều mô hình, heatmap đã kiểm tra lật của các mô hình được lấy trung bình trước khi giải mã. Gộp ở mức heatmap giữ được thông tin về độ bất định của từng mô hình. Khi hai mô hình bất đồng về vị trí một khớp, heatmap trung bình có hai đỉnh thấp hơn, và cực đại của nó phản ánh sự bất đồng đó.
+\paragraph{Gộp mô hình.} Với nhiều mô hình, heatmap đã kiểm tra lật của các mô hình được lấy trung bình trước khi giải mã. Khi hai mô hình bất đồng về vị trí một khớp, heatmap trung bình có hai đỉnh thấp hơn; chúng tôi không so sánh với cách lấy trung bình toạ độ.
 
 \paragraph{Giải mã DARK.} Với mỗi khớp, toạ độ nguyên $m$ là vị trí cực đại của heatmap. Heatmap được làm mượt bằng bộ lọc Gauss kích thước 11 rồi lấy logarit. Toạ độ dưới mức ô lưới là
 \begin{equation}
@@ -202,7 +221,7 @@ Như ở Track 1 và Track 2, điểm trên dữ liệu đã thấy không dự 
 \label{fig:lodo}
 \end{figure}
 
-Hình~\ref{fig:lodo} cho thấy ViTPose+ huge không tinh chỉnh chỉ đạt 0.70 AP trên ảnh UPAR, dù đây là mô hình mạnh trên COCO. Sau 2 epoch tinh chỉnh trên hai bộ dữ liệu còn lại, AP trên bộ giấu tăng lên 0.93. Mức tăng 0.23 lớn hơn mọi khác biệt khác trong báo cáo khoảng 10 lần. Nó cho thấy khoảng cách giữa COCO và ảnh giám sát độ phân giải thấp chủ yếu là khoảng cách miền mà dữ liệu cùng loại ảnh bù được, kể cả khi dữ liệu đó đến từ camera khác. Trên tập chấm, bài mẫu không tinh chỉnh đạt 0.6238, và mô hình base tinh chỉnh trên hai bộ dữ liệu (bài v1) đạt 0.8813.
+Hình~\ref{fig:lodo} cho thấy ViTPose+ huge không tinh chỉnh chỉ đạt 0.70 AP trên ảnh UPAR, dù đây là mô hình mạnh trên COCO. Sau 2 epoch tinh chỉnh trên hai bộ dữ liệu còn lại, AP trên bộ giấu tăng lên 0.93. Phần lớn khoảng cách này không phải khoảng cách miền ảnh. Mô hình COCO trả về hai mắt ở đúng hai vị trí mà PoseTrack dùng cho đáy đầu và đỉnh đầu, và hai điểm này có hằng số $\sigma$ nhỏ nhất. AP50 của mô hình chưa tinh chỉnh đã là 0.977, tức nó tìm đúng người và chỉ mất điểm ở các ngưỡng chặt, đúng dấu hiệu của một độ lệch có hệ thống. Khi chấm cả hai mô hình chỉ trên 13 khớp chung (bỏ đáy đầu và đỉnh đầu khỏi nhãn), khoảng cách thu hẹp còn 0.0066: 0.9297 chưa tinh chỉnh so với 0.9363 đã tinh chỉnh, trên PETA. Phần lớn mức tăng 0.23 vì vậy là mô hình học định nghĩa và quy ước gán nhãn điểm vùng đầu của PoseTrack. Thích nghi với ảnh giám sát độ phân giải thấp chỉ chiếm dưới một điểm, và nằm ở các ngưỡng chặt nhất: trên khớp chung, mô hình chưa tinh chỉnh còn nhỉnh hơn ở AP50 và AP75 (0.9774 và 0.9658 so với 0.9741 và 0.9628). Trên tập chấm, bài mẫu không tinh chỉnh đạt 0.6238 và chịu cùng độ lệch định nghĩa, nên mốc so sánh có ý nghĩa là mô hình base tinh chỉnh trên hai bộ dữ liệu (bài v1, 0.8813).
 
 \begin{table}[H]
 \centering\small
@@ -216,23 +235,23 @@ ViTPose+ large & & 0.9301 & 0.9314 & \\
 ViTPose+ huge & 0.7025 & 0.9325 & 0.9304 & \\
 \bottomrule
 \end{tabular}
-\caption{AP trên PETA giấu theo số epoch tinh chỉnh. AP gần như đạt mức cuối ngay sau epoch đầu, và các mô hình từ small tới huge chỉ cách nhau khoảng 0.003 trên PETA. Ô trống là lần chạy không được ghi lại ở epoch đó.}
+\caption{AP trên PETA giấu theo số epoch tinh chỉnh. Các lịch huấn luyện dài khác nhau (small 4, base 3, large và huge 2 epoch), nên cùng số epoch nằm ở điểm khác nhau của lịch cosine. Ô trống là lần chạy không được ghi lại ở epoch đó. AP của một mô hình dao động tới 0.0035 giữa hai epoch liên tiếp (base: 0.9323, 0.9297, 0.9332); chúng tôi dùng con số này làm cận dưới cho nhiễu huấn luyện, vì mỗi cấu hình chỉ được chạy một lần.}
 \label{tab:epochs}
 \end{table}
 
 \subsection{Cỡ mô hình và hiện tượng khớp dữ liệu đã thấy}
 \label{sec:size}
 
-Bảng~\ref{tab:epochs} cho thấy trên PETA, cỡ mô hình gần như không quan trọng sau tinh chỉnh. Ở epoch cuối, AP của bốn cỡ mô hình nằm trong khoảng 0.9301 đến 0.9332. Tuy nhiên Hình~\ref{fig:lodo} cho thấy huge hơn large rõ ở PA100k (0.9281 so với 0.9244), và trên tập chấm huge (v4, 0.8958) cũng hơn large (v2, 0.8939).
+Bảng~\ref{tab:epochs} cho thấy trên PETA, cỡ mô hình gần như không quan trọng sau tinh chỉnh: ở epoch cuối, AP của bốn cỡ nằm trong khoảng 0.9301 đến 0.9332. Large và huge chênh nhau $-0.0010$, $+0.0037$ và $+0.0004$ trên ba bộ giấu, nằm trong dao động giữa các epoch ở hai trong ba bộ. Trên tập chấm, huge (v4, 0.8958) hơn large (v2, 0.8939) 0.0019. Chúng tôi vì vậy chỉ coi lựa chọn huge là được giao thức ủng hộ yếu.
 
-Kết quả này ngược với phép đo trên dữ liệu đã thấy. Với các mô hình nộp bài đã học cả ba bộ dữ liệu, chấm lại trên chính ảnh PETA đã học cho huge 0.943, large 0.950 và bản gộp 0.948. Nếu chọn mô hình theo điểm trên dữ liệu đã thấy, ta sẽ chọn large. Một giải thích hợp lý là mô hình huge, với cùng số epoch và learning rate, khớp ít hơn các chi tiết riêng của dữ liệu huấn luyện và giữ được nhiều hơn kiến thức tiền huấn luyện, vốn chuyển tốt hơn sang miền mới. Chúng tôi chưa kiểm chứng giải thích này bằng thí nghiệm có kiểm soát.
+Điểm trên dữ liệu đã thấy xếp hai mô hình theo chiều ngược lại: chấm lại các mô hình nộp bài trên chính ảnh PETA đã học cho huge 0.943, large 0.950 và bản gộp 0.948. Một giải thích hợp lý là mô hình huge, với cùng số epoch và learning rate, khớp ít hơn các chi tiết riêng của dữ liệu huấn luyện. Chúng tôi chưa kiểm chứng giải thích này, và chưa so với điểm trên ảnh val của chính các miền đã thấy.
 
 \subsection{Gộp heatmap}
 
-Gộp large và huge ở mức heatmap tăng AP ở cả ba miền giấu, với mức tăng trung bình 0.0026 so với huge một mình (0.9353 so với 0.9327). Trên tập chấm, bản gộp (v3) đạt 0.8977, hơn huge 0.0019. Gộp có ích dù hai mô hình gần ngang nhau, vì chúng sai ở các khớp khác nhau. Khi một mô hình đặt nhầm cổ tay sang tay bên kia, mô hình còn lại thường kéo đỉnh heatmap trung bình về đúng vị trí.
+Gộp large và huge ở mức heatmap tăng AP ở cả ba miền giấu, 0.0048, 0.0010 và 0.0020 so với huge một mình (trung bình 0.0026); chỉ mức tăng trên PETA vượt rõ dao động giữa các epoch. Trên tập chấm, bản gộp (v3) đạt 0.8977, hơn huge 0.0019. Mục~\ref{sec:extra} cho thấy một phần đáng kể lợi ích của gộp mô hình đến từ điểm tin cậy tốt hơn chứ không từ toạ độ khớp tốt hơn.
 
 \begin{ghichu}
-Với dữ liệu ít và miền mới, điểm trên dữ liệu đã thấy có thể xếp hạng các mô hình theo thứ tự ngược với khả năng tổng quát hoá. Mọi lựa chọn mô hình trong báo cáo này dựa trên miền giấu, và thứ tự trên miền giấu khớp với thứ tự trên tập chấm ở cả hai bước (huge so với large, gộp so với huge).
+Với dữ liệu ít và miền mới, điểm trên dữ liệu đã thấy có thể xếp hạng các mô hình theo thứ tự ngược với khả năng tổng quát hoá. Mọi lựa chọn mô hình trong báo cáo này dựa trên miền giấu. Thứ tự trung bình trên miền giấu cùng chiều với tập chấm ở cả hai bước (huge so với large, gộp so với huge), nhưng các chênh lệch đều nhỏ so với nhiễu.
 \end{ghichu}
 
 %=====================================================================
@@ -263,15 +282,15 @@ Bộ chấm học được (mục~\ref{sec:rescore}) & 0.9344 & 0.9299 & 0.9415 
 OKS thật (lý tưởng) & 0.9436 & 0.9426 & 0.9525 & 0.9462 \\
 \bottomrule
 \end{tabular}
-\caption{AP theo cách gán điểm tin cậy, mô hình huge. Điểm mặc định hơn điểm hằng số 0.024. Điểm lý tưởng còn hơn điểm mặc định 0.0135, và bộ chấm học được lấy lại 0.0025 trong số đó.}
+\caption{AP theo cách gán điểm tin cậy, mô hình huge. Điểm mặc định hơn điểm hằng số 0.024. Điểm lý tưởng còn hơn điểm mặc định 0.0132, 0.0145 và 0.0129 trên ba bộ.}
 \label{tab:choices}
 \end{table}
 
-Hai kết luận rút ra. Thứ nhất, điểm tin cậy đóng góp một phần đáng kể của AP. Điểm mặc định hơn điểm hằng số 0.024, lớn hơn cả mức tăng 0.0164 khi đi từ mô hình base trên hai bộ dữ liệu lên bản gộp large và huge trên tập chấm (0.8813 lên 0.8977). Thứ hai, điểm mặc định còn xa điểm lý tưởng. Khoảng cách 0.0135 lớn hơn mọi mức tăng từ cỡ mô hình hay từ gộp mô hình đã đo.
+Hai kết luận rút ra. Thứ nhất, điểm tin cậy đóng góp một phần đáng kể của AP: điểm mặc định hơn điểm hằng số 0.024. Thứ hai, điểm mặc định còn xa điểm lý tưởng. Khoảng cách 0.013 đến 0.015 lớn hơn mức tăng của gộp mô hình ở mục~\ref{sec:lodo}, mà không cần đụng vào toạ độ khớp. Tương quan thứ hạng Spearman giữa điểm mặc định và OKS chỉ ở mức vừa: 0.52 trên PETA, 0.36 trên PA100k và 0.44 trên Market1501.
 
 \subsection{Vì sao điểm mặc định chưa tốt}
 
-Hình~\ref{fig:hist} cho thấy phân bố OKS của từng người trên ba miền giấu lệch mạnh về phía 1. Trung vị OKS là khoảng 0.97, nhưng có một đuôi dài các dự đoán sai nặng. Điểm tin cậy tốt phải tách được đuôi này khỏi phần còn lại.
+Hình~\ref{fig:hist} cho thấy phân bố OKS của từng người trên ba miền giấu lệch mạnh về phía 1. Trung vị OKS là khoảng 0.97, kèm một đuôi các dự đoán sai nặng. Trực giác đầu tiên là điểm tin cậy tốt phải tách đuôi này khỏi phần còn lại. Phép đo ở mục~\ref{sec:rescore} cho thấy trực giác này chỉ đúng một phần nhỏ.
 
 \begin{figure}[H]
 \centering
@@ -287,7 +306,7 @@ Hình~\ref{fig:hist} cho thấy phân bố OKS của từng người trên ba mi
 \label{fig:examples}
 \end{figure}
 
-Hình~\ref{fig:examples} minh hoạ điểm yếu của điểm mặc định. Trung bình 17 cực đại heatmap đo mức tự tin của mô hình rằng có một khớp ở đâu đó, chứ không đo việc khớp đó có thuộc đúng người được gán nhãn hay không. Ở ảnh cuối, mô hình tìm thấy rất rõ một bộ khung người, chỉ là của người khác. Điểm mặc định cho dự đoán này 0.80, cao hơn nhiều dự đoán có OKS trên 0.9. Trên PETA giấu, tương quan thứ hạng Spearman giữa điểm mặc định và OKS chỉ là 0.52.
+Hình~\ref{fig:examples} minh hoạ điểm yếu của điểm mặc định. Trung bình 17 cực đại heatmap đo mức tự tin của mô hình rằng có một khớp ở đâu đó, chứ không đo việc khớp đó có thuộc đúng người được gán nhãn hay không. Ở ảnh cuối, mô hình tìm thấy rất rõ một bộ khung người, chỉ là của người khác. Điểm mặc định cho dự đoán này 0.80, cao hơn nhiều dự đoán có OKS trên 0.9. Tuy vậy, các ca hỏng như thế quá hiếm để chiếm phần lớn giá trị của điểm tin cậy: một oracle chỉ đẩy mọi dự đoán có OKS dưới 0.5 xuống cuối danh sách tăng AP 0.0039, 0.0008 và 0.0005 trên ba bộ, một phần nhỏ của mức tăng mà điểm lý tưởng mang lại. Không bộ nào có quá 1\% số dự đoán dưới OKS 0.5.
 
 %=====================================================================
 \section{Học lại điểm tin cậy}
@@ -295,7 +314,7 @@ Hình~\ref{fig:examples} minh hoạ điểm yếu của điểm mặc định. T
 
 \paragraph{Vấn đề.} Điểm tin cậy cần xếp hạng các dự đoán theo OKS thật, nhưng điểm mặc định chỉ dùng một thống kê của heatmap.
 
-\paragraph{Khoảng trống.} Các công thức đơn giản thay thế không tốt hơn. Trên 1000 người PETA, chúng tôi thử trung bình các cực đại trên 0.2 theo cách của mmpose, trung bình nhân, cực đại nhỏ nhất, trung bình 5 cực đại nhỏ nhất, trung bình có trọng số theo $1/\sigma_k^2$ và nhân với một hàm của kích thước khung. Không công thức nào hơn trung bình thường. CCNet~\cite{ccnet} học điểm từ đặc trưng bên trong mạng, nhưng cách này cần sửa mô hình và huấn luyện lại một nhánh mới.
+\paragraph{Khoảng trống.} Các công thức đơn giản thay thế, đánh giá trên đặc trưng của miền giấu, không tốt hơn trung bình thường: trung bình các cực đại trên 0.2 theo cách của mmpose, trung bình nhân, cực đại nhỏ nhất, trung bình 5 cực đại nhỏ nhất và trung bình có trọng số theo $1/\sigma_k^2$ đều ngang hoặc kém điểm mặc định. Ngoại lệ duy nhất là bỏ hai kênh tai, phân tích ở mục~\ref{sec:ears}. CCNet~\cite{ccnet} học điểm từ đặc trưng bên trong mạng, nhưng cách này cần sửa mô hình và huấn luyện lại một nhánh mới.
 
 \paragraph{Thuộc tính cần có.} Bộ chấm phải học được từ dữ liệu, chỉ dùng thông tin có sẵn ở đầu ra của mô hình đã đóng gói, chạy được với numpy trong môi trường chấm, và được kiểm chứng trên miền không dùng để huấn luyện nó.
 
@@ -318,7 +337,7 @@ Các khoảng cách và độ lệch chuẩn được lấy $\log(1+\cdot)$ đ�
 
 \subsection{Bộ hồi quy và giao thức huấn luyện}
 
-Mục tiêu hồi quy là OKS thật của từng người, tính bằng đúng công thức chấm của cuộc thi. Bộ hồi quy là gradient boosting dựa trên histogram~\cite{friedman} với 150 cây, mỗi cây tối đa 7 lá, learning rate 0.05, tối thiểu 100 mẫu một lá và không dùng dừng sớm. Cấu hình nhỏ được chọn để hạn chế khớp quá mức vào miền huấn luyện. Chúng tôi cũng thử hồi quy tuyến tính Ridge và một MLP một tầng ẩn.
+Mục tiêu hồi quy là OKS thật của từng người, tính bằng đúng công thức chấm của cuộc thi. Bộ hồi quy là gradient boosting dựa trên histogram~\cite{friedman,lightgbm} với 150 cây, mỗi cây tối đa 7 lá, learning rate 0.05, tối thiểu 100 mẫu một lá và không dùng dừng sớm. Cấu hình này được chọn sau khi thử một cấu hình lớn hơn (15 lá, 300 cây) trên chính các fold giấu, nên kết quả mang một hiệu ứng chọn nhỏ; hai cấu hình chênh nhau 0.0003 trung bình. Chúng tôi cũng thử hồi quy tuyến tính Ridge và một MLP một tầng ẩn.
 
 Bộ chấm được đánh giá theo cùng giao thức giấu từng bộ dữ liệu. Đặc trưng và OKS của mỗi bộ được tính bằng mô hình tư thế chưa thấy bộ đó. Bộ chấm được huấn luyện trên đặc trưng của hai bộ và chấm AP trên bộ thứ ba. Bộ chấm dùng khi nộp bài được huấn luyện lại trên đặc trưng của cả ba bộ.
 
@@ -342,11 +361,11 @@ Cây tăng cường, cấu hình lớn (15 lá, 300 cây) & 0.9338 & 0.9293 & 0.
 Cây tăng cường, cấu hình nộp bài & 0.9344 & 0.9299 & 0.9415 & 0.9352 \\
 \bottomrule
 \end{tabular}
-\caption{AP trên ba miền giấu với các bộ chấm khác nhau, cùng toạ độ khớp. Cây tăng cường cấu hình nhỏ tăng ở cả ba miền (+0.0040, +0.0018, +0.0019). MLP kém điểm mặc định ở cả ba miền, cho thấy bộ chấm dễ khớp quá mức vào miền huấn luyện.}
+\caption{AP trên ba miền giấu với các bộ chấm khác nhau, cùng toạ độ khớp. Cây tăng cường cấu hình nộp bài tăng ở cả ba miền (+0.0040, +0.0018, +0.0019). MLP không được tinh chỉnh siêu tham số, nên chúng tôi không kết luận gì từ nó.}
 \label{tab:rescore}
 \end{table}
 
-Bảng~\ref{tab:rescore} cho thấy cây tăng cường cấu hình nhỏ là lựa chọn tốt nhất, tăng ở cả ba miền giấu và trung bình 0.0025. Hồi quy tuyến tính chỉ trên cực đại và độ lệch lật cho mức tăng ổn định 0.0018 với 34 tham số, nên là một phương án dự phòng hợp lý nếu không xuất được cây. MLP kém điểm mặc định ở cả ba miền. Với bản gộp large và huge, bộ chấm 87 đặc trưng tăng AP từ 0.9353 lên 0.9368 (+0.0025, +0.0006, +0.0015 trên ba miền). Bỏ 17 đặc trưng bất đồng giữa hai mô hình cho 0.9367, nên các đặc trưng này gần như không thêm thông tin.
+Bảng~\ref{tab:rescore} cho thấy cây tăng cường tăng ở cả ba miền giấu. Lấy mẫu lại người bằng bootstrap với mô hình cố định cho sai số chuẩn 0.0005, 0.0003 và 0.0002 của ba mức tăng, nên chúng vượt xa nhiễu lấy mẫu. So với điểm lý tưởng, bộ chấm lấy lại 30\%, 12\% và 15\% mức tăng có thể. Tương quan thứ hạng với OKS tăng từ 0.52 lên 0.63 trên PETA, từ 0.36 lên 0.43 trên PA100k và từ 0.44 lên 0.48 trên Market1501. Với bản gộp large và huge, bộ chấm 87 đặc trưng tăng AP từ 0.9353 lên 0.9368 (+0.0025, +0.0006, +0.0015 trên ba miền).
 
 \begin{figure}[H]
 \centering
@@ -355,27 +374,43 @@ Bảng~\ref{tab:rescore} cho thấy cây tăng cường cấu hình nhỏ là l�
 \label{fig:scatter}
 \end{figure}
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.66\linewidth]{importance.png}
-\caption{Mức giảm tương quan thứ hạng giữa điểm học được và OKS khi hoán vị ngẫu nhiên một nhóm đặc trưng, trung bình trên ba miền giấu, thanh lỗi là độ lệch chuẩn giữa các miền. Cực đại heatmap và tỉ số khối trên đỉnh mang gần như toàn bộ thông tin.}
-\label{fig:imp}
-\end{figure}
+\paragraph{Bộ chấm dựa vào đâu.} Chúng tôi huấn luyện lại bộ chấm, mỗi lần bỏ một nhóm đặc trưng (Bảng~\ref{tab:dropcol}). Bỏ bất kỳ nhóm nào cũng chỉ làm AP trung bình thay đổi tối đa 0.0005, nên các đặc trưng phần lớn trùng thông tin. Đặc biệt, đặc trưng kích thước khung không đóng vai trò nhận diện bộ dữ liệu, một mối lo hợp lý vì mọi khung của Market1501 có cùng kích thước.
 
-Hình~\ref{fig:imp} cho biết bộ chấm dựa vào đâu. Cực đại heatmap vẫn là nhóm quan trọng nhất, nhưng tỉ số khối trên đỉnh đóng góp phần lớn còn lại. Tỉ số này lớn khi heatmap có nhiều đỉnh, đúng dấu hiệu của tình huống hai người chồng lên nhau như ở Hình~\ref{fig:examples}. Ngược với dự đoán ban đầu của chúng tôi, độ lệch giữa ảnh gốc và ảnh lật đóng góp rất ít khi đã có cực đại và tỉ số khối trên đỉnh. Các nhóm còn lại có mức đóng góp thay đổi nhiều giữa các miền, thể hiện qua thanh lỗi lớn của độ loe heatmap.
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Bộ chấm cấu hình nộp bài & giấu PETA & giấu PA100k & giấu Market1501 & Trung bình \\
+\midrule
+đủ đặc trưng & 0.9344 & 0.9299 & 0.9415 & 0.9353 \\
+bỏ 17 cực đại & 0.9339 & 0.9297 & 0.9409 & 0.9348 \\
+bỏ độ lệch lật & 0.9343 & 0.9297 & 0.9415 & 0.9352 \\
+bỏ tỉ số khối trên đỉnh & 0.9344 & 0.9300 & 0.9415 & 0.9353 \\
+bỏ độ lệch chuẩn không gian & 0.9345 & 0.9298 & 0.9415 & 0.9353 \\
+bỏ kích thước khung & 0.9343 & 0.9298 & 0.9416 & 0.9352 \\
+\bottomrule
+\end{tabular}
+\caption{Bộ chấm huấn luyện lại khi bỏ từng nhóm đặc trưng (mô hình huge, giấu bộ dữ liệu ở cả hai tầng).}
+\label{tab:dropcol}
+\end{table}
+
+\subsection{Phần lớn lợi ích là sửa điểm mặc định}
+\label{sec:ears}
+
+Điểm mặc định là trung bình cực đại của cả 17 kênh heatmap, gồm hai kênh tai mà PoseTrack không bao giờ gán nhãn (tỉ lệ có nhãn bằng 0 ở cả ba bộ) và chỉ số không bao giờ chấm. Độ tin cậy của hai kênh này không nói gì về các khớp được chấm. Chỉ cần lấy trung bình 15 cực đại còn lại, AP tăng 0.0035, 0.0015 và 0.0018 trên ba bộ, tức phần lớn mức tăng của bộ chấm học được. Bộ chấm học được chỉ còn hơn công thức này 0.0005, 0.0003 và 0.0001, khoảng hai sai số chuẩn trở xuống (mỗi sai số khoảng 0.0002). Hình~\ref{fig:thr} cho thấy hai cách chấm đi cùng nhau ở từng ngưỡng. Lợi thế của bộ chấm học được vì vậy chủ yếu không nằm ở cây, mà ở chỗ cây đã học cách bỏ qua các kênh không được chấm. Phát hiện này cũng giải thích một phần vì sao gộp thêm mô hình làm điểm tốt hơn: trung bình nhiều mô hình làm nhiễu của các kênh tai nhỏ đi.
 
 \subsection{Bộ chấm giúp ở ngưỡng nào}
 
-Hình~\ref{fig:thr} tách mức tăng AP của bộ chấm và của điểm lý tưởng theo 10 ngưỡng OKS. Ở các ngưỡng từ 0.50 tới 0.85, bộ chấm chỉ tăng khoảng 0.001 và điểm lý tưởng tăng 0.002 đến 0.006. Gần như toàn bộ lợi ích nằm ở ngưỡng 0.95, nơi bộ chấm tăng 0.0175 và điểm lý tưởng tăng 0.092.
+Hình~\ref{fig:thr} tách mức tăng AP theo 10 ngưỡng OKS cho từng bộ. Trên PA100k và Market1501, 79\% và 78\% mức tăng của điểm lý tưởng nằm ở ngưỡng 0.95, và gần như toàn bộ mức tăng của bộ chấm học được cũng ở đó; trên PA100k, bộ chấm còn hơi âm ở mọi ngưỡng tới 0.85. Trên PETA, mức tăng trải đều hơn: 47\% của điểm lý tưởng và khoảng 40\% của bộ chấm nằm ở 0.95. PETA cũng là bộ có nhiều lỗi nhầm trái phải nhất (mục~\ref{sec:errors}), loại lỗi mà điểm tin cậy có thể đẩy xuống ở mọi ngưỡng, khớp với việc oracle đẩy dự đoán hỏng xuống cuối có ích nhất ở PETA.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.66\linewidth]{per_threshold.png}
-\caption{Mức tăng AP so với điểm mặc định theo từng ngưỡng OKS, trung bình trên ba miền giấu. Cả bộ chấm học được lẫn điểm lý tưởng tạo ra phần lớn lợi ích ở ngưỡng 0.95.}
+\includegraphics[width=\linewidth]{per_threshold.png}
+\caption{Mức tăng AP so với điểm mặc định theo từng ngưỡng OKS, mỗi ô là một miền giấu (mô hình huge, giữ nguyên toạ độ khớp). Xám: OKS thật làm điểm (cắt ở trục, giá trị ghi trên cột). Cam: điểm mặc định bỏ hai kênh tai. Xanh: bộ chấm học được. AP là trung bình 10 ngưỡng, nên tăng 1.6 điểm ở một ngưỡng chỉ thêm 0.16 điểm AP.}
 \label{fig:thr}
 \end{figure}
 
-Phân tích ở mục~\ref{sec:metric} giải thích hiện tượng này. Ở ngưỡng thấp, hầu hết dự đoán đều đúng ($f_t$ gần 1), nên thứ tự của chúng gần như không quan trọng. Ở ngưỡng 0.90, khoảng 91\% đến 93\% dự đoán được tính là đúng. Ở ngưỡng 0.95, tỉ lệ này giảm còn 69\% đến 76\%. Đây là ngưỡng có tỉ lệ dự đoán sai lớn nhất, nên việc tách dự đoán đúng khỏi dự đoán sai bằng điểm tin cậy có giá trị lớn nhất ở đây. Hệ quả thực tế là điểm tin cậy cần phân biệt các dự đoán rất tốt (OKS trên 0.95) với các dự đoán chỉ tốt (0.90 đến 0.95), chứ không chỉ loại bỏ các dự đoán hỏng.
+Phân tích ở mục~\ref{sec:metric} giải thích hiện tượng này. Ở ngưỡng thấp, hầu hết dự đoán đều đúng ($f_t$ gần 1), nên thứ tự của chúng gần như không quan trọng. Ở ngưỡng 0.90, khoảng 91\% đến 93\% dự đoán được tính là đúng. Ở ngưỡng 0.95, tỉ lệ này giảm còn 69\% đến 76\%. Đây là ngưỡng có tỉ lệ dự đoán sai lớn nhất, nên việc tách dự đoán đúng khỏi dự đoán sai bằng điểm tin cậy có giá trị lớn nhất ở đây. Với người có kích thước trung vị của PETA (khung cao 149 pixel), độ tương đồng 0.95 ở vai cho phép sai khoảng 5 pixel, chưa tới hai ô của heatmap 64×48. Điểm tin cậy vì vậy cần phân biệt các dự đoán rất tốt với các dự đoán chỉ tốt, một nhiệm vụ tinh hơn nhiều so với loại bỏ các dự đoán hỏng.
 
 \subsection{Tương quan thứ hạng không đủ để mô tả chất lượng điểm}
 
@@ -388,7 +423,7 @@ Phân tích ở mục~\ref{sec:metric} giải thích hiện tượng này. Ở n
 \label{fig:noise}
 \end{figure}
 
-AP tăng theo tương quan theo dạng lõm. Lợi ích lớn nhất đến khi tương quan đi từ 0 tới khoảng 0.4. Điểm mặc định và bộ chấm học được đều nằm dưới đường cong của miền tương ứng. Ở cùng một mức tương quan thứ hạng, điểm của chúng cho AP thấp hơn điểm nhiễu ngẫu nhiên. Nhiễu Gauss cộng vào OKS gây lỗi đều trên toàn dải, trong khi lỗi của điểm thật có cấu trúc. Điểm thật thường xếp sai ở vùng OKS cao, giữa các dự đoán từ 0.90 tới 0.99, đúng vùng mà ngưỡng 0.95 cắt qua. Vì vậy cải thiện tương quan tổng thể chưa chắc cải thiện AP tương xứng, và một mục tiêu huấn luyện tập trung vào vùng OKS cao có thể hiệu quả hơn hồi quy bình phương trên toàn dải.
+AP tăng theo tương quan theo dạng lõm. Lợi ích lớn nhất đến khi tương quan đi từ 0 tới khoảng 0.4. Điểm mặc định và bộ chấm học được đều nằm dưới đường cong của miền tương ứng. Ở cùng một mức tương quan thứ hạng, điểm của chúng cho AP thấp hơn điểm nhiễu ngẫu nhiên. Nhiễu Gauss cộng vào OKS gây lỗi đều trên toàn dải, trong khi lỗi của điểm thật có cấu trúc. Một giả thuyết, chúng tôi chưa đo trực tiếp, là điểm thật thường xếp sai ở vùng OKS cao, đúng vùng mà ngưỡng 0.95 cắt qua. Nếu đúng, cải thiện tương quan tổng thể chưa chắc cải thiện AP tương xứng, và một mục tiêu huấn luyện tập trung vào vùng OKS cao có thể hiệu quả hơn hồi quy bình phương trên toàn dải. Đường nhiễu Gauss chỉ là một mốc tham chiếu, không phải mô hình lỗi đúng của điểm thật.
 
 \begin{ghichu}
 Bộ chấm lại điểm tin cậy là một thành phần độc lập với mô hình tư thế. Nó không thay đổi toạ độ khớp nào, nên không thể làm hỏng độ chính xác định vị, và nó chỉ được huấn luyện và kiểm chứng trên dự đoán của mô hình ở các miền mà mô hình chưa thấy.
@@ -409,7 +444,7 @@ Hình~\ref{fig:joints} đo độ tương đồng của từng khớp, là thành
 \label{fig:joints}
 \end{figure}
 
-Ba điểm vùng đầu (mũi, đáy đầu, đỉnh đầu) mất 0.08 đến 0.13, gấp ba đến năm lần vai và hông (0.014 đến 0.032). Có hai lý do. Hằng số $\sigma$ của ba điểm này nhỏ nhất (0.025 và 0.026), nên cùng một sai số pixel bị phạt nặng hơn nhiều so với hông ($\sigma=0.107$). Ngoài ra đáy đầu và đỉnh đầu không có trong COCO, nên mô hình phải học chúng chỉ từ dữ liệu UPAR, và vị trí của chúng phụ thuộc vào quy ước gán nhãn hơn là vào một mốc giải phẫu rõ ràng. PETA là ngoại lệ, với điểm vùng đầu tốt hơn hai miền còn lại, nhưng cổ tay kém hơn (0.074 đến 0.077). Cổ tay là khớp nhỏ, di chuyển nhiều và hay bị che bởi túi xách.
+Ba điểm vùng đầu (mũi, đáy đầu, đỉnh đầu) mất 0.08 đến 0.13, gấp ba đến năm lần vai và hông (0.014 đến 0.032). Có hai lý do. Hằng số $\sigma$ của ba điểm này nhỏ nhất (0.025 và 0.026), nên cùng một sai số pixel bị phạt nặng hơn nhiều so với hông ($\sigma=0.107$). Ngoài ra đáy đầu và đỉnh đầu không có trong COCO, nên mô hình phải học chúng chỉ từ dữ liệu UPAR, và vị trí của chúng phụ thuộc vào quy ước gán nhãn hơn là vào một mốc giải phẫu rõ ràng. PETA là ngoại lệ, với điểm vùng đầu tốt hơn hai miền còn lại, nhưng cổ tay kém hơn (0.074 đến 0.077). Cổ tay là khớp nhỏ và di chuyển nhiều.
 
 \subsection{Kích thước người}
 
@@ -420,11 +455,11 @@ Ba điểm vùng đầu (mũi, đáy đầu, đỉnh đầu) mất 0.08 đến 0
 \label{fig:size}
 \end{figure}
 
-Hình~\ref{fig:size} cho thấy nhóm 20\% người nhỏ nhất có OKS thấp hơn rõ rệt (0.928 so với khoảng 0.95 ở PETA, 0.938 so với 0.945 đến 0.952 ở PA100k). Ở PETA, nhóm nhỏ nhất có diện tích khung dưới 6144 pixel vuông, cỡ một khung 48×128. Sau khi phóng lên 256×192, các ảnh này mờ và thiếu chi tiết để phân biệt khớp. Đây cũng là lý do log diện tích khung được đưa vào bộ chấm.
+Hình~\ref{fig:size} cho thấy nhóm 20\% người nhỏ nhất theo diện tích khung có OKS thấp hơn (0.937 so với 0.953 của phần còn lại ở PETA, 0.938 so với 0.948 ở PA100k). Ở PETA, nhóm nhỏ nhất có diện tích khung dưới 6144 pixel vuông, cỡ một khung 48×128. Sau khi phóng lên 256×192, các ảnh này mờ và thiếu chi tiết để phân biệt khớp. Đây cũng là lý do log diện tích khung được đưa vào bộ chấm.
 
 \subsection{Nhầm trái và phải}
 
-Hình~\ref{fig:resid} cho thấy các người có OKS dưới 0.5 nhưng vẫn được bộ chấm xếp vào nửa trên. Trên hình, khung xương dự đoán và khung xương nhãn gần như trùng nhau. Chúng tôi kiểm tra giả thuyết rằng mô hình nhầm người quay mặt với người quay lưng. Khi đó mọi khớp bên trái được gán sang bên phải và ngược lại, nên khung xương vẽ ra trông giống nhau nhưng từng khớp đều sai.
+Hình~\ref{fig:resid} cho thấy các người có OKS dưới 0.5 nhưng vẫn được bộ chấm xếp vào nửa trên. Trên hình, khung xương dự đoán và khung xương nhãn gần như trùng nhau. Chúng tôi kiểm tra giả thuyết rằng mô hình nhầm người quay mặt với người quay lưng. Khi đó mọi khớp bên trái được gán sang bên phải và ngược lại, nên khung xương vẽ ra trông giống nhau nhưng từng khớp đều sai. Ronchi và Perona~\cite{ronchi} gọi loại lỗi này là \textbf{inversion} (tạm dịch: nhầm trái phải trong cùng một người), phân biệt với \textbf{swap} (lấy khớp của người khác).
 
 \begin{figure}[H]
 \centering
@@ -442,13 +477,18 @@ Hình~\ref{fig:resid} cho thấy các người có OKS dưới 0.5 nhưng vẫn 
 Số người có OKS dưới 0.5 & 97 & 187 & 21 \\
 Trong đó, OKS trên 0.8 sau khi hoán đổi trái phải & 51 (53\%) & 55 (29\%) & 12 (57\%) \\
 Tỉ lệ mọi người mà hoán đổi tăng OKS hơn 0.2 & 1.3\% & 0.6\% & 0.2\% \\
+AP, điểm mặc định & 0.9304 & 0.9281 & 0.9396 \\
+AP khi sửa các ca nhầm, điểm mặc định & 0.9469 & 0.9323 & 0.9400 \\
+AP khi sửa các ca nhầm, OKS thật làm điểm & 0.9545 & 0.9465 & 0.9525 \\
 \bottomrule
 \end{tabular}
-\caption{Nhầm trái và phải trên ba miền giấu. Đây là nguyên nhân của khoảng một nửa số dự đoán hỏng nặng ở PETA và Market1501.}
+\caption{Nhầm trái và phải trên ba miền giấu và số AP mà chúng làm mất. Gộp ba bộ, 39\% số dự đoán dưới OKS 0.5 là nhầm trái phải.}
 \label{tab:swap}
 \end{table}
 
-Bảng~\ref{tab:swap} xác nhận giả thuyết. Ở PETA và Market1501, hơn một nửa số dự đoán có OKS dưới 0.5 trở thành dự đoán tốt (OKS trên 0.8) chỉ bằng cách hoán đổi trái phải. Tính trên mọi người, nhầm hướng chiếm 0.2\% đến 1.3\% số dự đoán. Tỉ lệ nhỏ nhưng mỗi ca mất gần trọn điểm OKS. Lỗi này khó phát hiện từ heatmap, vì mô hình rất chắc chắn về vị trí các khớp, chỉ sai về nhãn trái phải. Kiểm tra lật cũng không giúp, vì ảnh lật của một người quay lưng trông giống người quay mặt. Chúng tôi chưa loại trừ được khả năng một phần các ca này là nhãn bị gán ngược, vì người gán nhãn cũng có thể nhầm hướng ở ảnh độ phân giải thấp. Một hướng tiếp theo là thêm vào bộ chấm đặc trưng đo độ mơ hồ trái phải, ví dụ cường độ của heatmap khớp trái tại vị trí khớp phải.
+Bảng~\ref{tab:swap} xác nhận giả thuyết. Ở PETA và Market1501, hơn một nửa số dự đoán có OKS dưới 0.5 trở thành dự đoán tốt (OKS trên 0.8) chỉ bằng cách hoán đổi trái phải; ở PA100k là 29\%. Tính trên mọi người, nhầm trái phải chỉ chiếm 0.2\% đến 1.3\%. Nhưng thay các dự đoán đó bằng bản đã hoán đổi, giữ nguyên điểm mặc định, sẽ tăng AP 0.0165 trên PETA, nhiều hơn toàn bộ khoảng cách tới điểm tin cậy lý tưởng ở đó, và 0.0042 và 0.0004 trên hai bộ còn lại.
+
+Lỗi này khó phát hiện từ đầu ra. Mô hình rất chắc chắn về vị trí các khớp, chỉ sai về nhãn trái phải. Kiểm tra lật cũng không lộ ra nó: lật ảnh không đổi việc người đó quay mặt hay quay lưng, nên mô hình mắc cùng một lỗi ở cả hai lần chạy và đặc trưng độ lệch lật vẫn thấp. Sau khi nộp bài, chúng tôi thử hai cách phát hiện trên dự đoán giấu bộ dữ liệu, và cả hai đều thất bại. Quy tắc ``mũi được nhìn rõ nhưng vai và hông xếp theo thứ tự nhìn từ sau lưng'' gắn cờ khoảng 45\% số người nhưng chỉ khoảng 2\% trong số đó là nhầm thật, vì heatmap mũi vẫn tự tin cả khi người quay lưng. Một bộ phân loại cây tăng cường trên đặc trưng heatmap cộng hình học tư thế, huấn luyện giấu bộ dữ liệu, chỉ đạt độ chính xác tối đa 10\% ở các ứng viên đứng đầu, và hoán đổi các ứng viên đó làm AP giảm. Sửa lỗi này vì vậy cần tín hiệu về hướng người lấy từ chính ảnh, tức là phải huấn luyện thêm. Chúng tôi cũng chưa kiểm tra bao nhiêu ca là nhãn bị gán ngược, điều có thể xảy ra ở ảnh độ phân giải thấp.
 
 %=====================================================================
 \section{Kết quả trên tập chấm ẩn}
@@ -457,7 +497,7 @@ Bảng~\ref{tab:swap} xác nhận giả thuyết. Ở PETA và Market1501, hơn 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{leaderboard.png}
-\caption{OKS AP trên tập chấm ẩn. Trái, bài mẫu không tinh chỉnh so với bài tinh chỉnh đầu tiên. Phải, các bước sau tinh chỉnh. Mỗi bước tăng 0.0015 đến 0.0126.}
+\caption{OKS AP trên tập chấm ẩn. Trái, bài mẫu không tinh chỉnh so với bài tinh chỉnh đầu tiên. Phải, các bước sau tinh chỉnh.}
 \label{fig:lb}
 \end{figure}
 
@@ -469,17 +509,19 @@ Bài & Mô hình & Thay đổi & Tập chấm & Dự báo từ miền giấu \\
 \midrule
 mẫu & ViTPose+ S & không tinh chỉnh (bài của ban tổ chức) & 0.6238 & \\
 v1 & ViTPose+ B & tinh chỉnh trên hai bộ dữ liệu & 0.8813 & \\
-v2 & ViTPose+ L & tinh chỉnh trên ba bộ, 5 epoch & 0.8939 & \\
-v4 & ViTPose+ H & như v2 & 0.8958 & huge hơn large ở 2/3 miền \\
-v3 & L + H & gộp heatmap & 0.8977 & +0.0026 so với huge \\
-v6 & L + H & + bộ chấm điểm & 0.8992 & +0.0015 so với v3 \\
+v2 & ViTPose+ L & đổi cỡ, ba bộ dữ liệu, 5 epoch (ba yếu tố) & 0.8939 & \\
+v4 & ViTPose+ H & huge thay large & 0.8958 & +0.0010 \\
+v3 & L + H & gộp heatmap & 0.8977 & +0.0026 \\
+v6 & L + H & + bộ chấm điểm & 0.8992 & +0.0015 (0.0006 đến 0.0025) \\
 \bottomrule
 \end{tabularx}
-\caption{Các bài nộp Track 3. Ở hai bước cuối, chiều của thay đổi trên tập chấm khớp với dự báo từ giao thức giấu từng bộ dữ liệu. Ở bước cuối, độ lớn cũng khớp chính xác.}
+\caption{Các bài nộp Track 3. Cột cuối là mức tăng trung bình trên ba miền giấu của cùng thay đổi. Ba bước cuối mỗi bước đổi một yếu tố và đều cùng chiều với giao thức.}
 \label{tab:lb}
 \end{table}
 
-Bảng~\ref{tab:lb} tóm tắt các bài nộp. Hai bước có ý nghĩa nhất về phương pháp là gộp heatmap (+0.0019) và bộ chấm điểm (+0.0015). Mức tăng của bộ chấm điểm trên tập chấm bằng đúng mức trung bình dự báo trên ba miền giấu với bản gộp. Sự trùng khớp này nhiều phần có yếu tố may mắn, nhưng nó hỗ trợ hai điều. Giao thức thẩm định đại diện được cho tập chấm ở loại thay đổi này, và bộ chấm không khớp quá mức vào ba miền huấn luyện.
+Bảng~\ref{tab:lb} tóm tắt các bài nộp. Mốc so sánh có ý nghĩa là mô hình base tinh chỉnh (v1); bài mẫu của ban tổ chức chịu độ lệch định nghĩa điểm vùng đầu ở mục~\ref{sec:lodo}. Ba bước cuối mỗi bước đổi một yếu tố, và cả ba cùng chiều với giao thức. Bộ chấm điểm thêm 0.0015, nằm trong khoảng 0.0006 đến 0.0025 của nó trên ba miền giấu. Điều này nhất quán với việc giao thức đại diện được cho tập chấm ở loại thay đổi này, nhưng chỉ là một quan sát.
+
+\paragraph{Bộ chấm gặp đặc trưng chưa được kiểm chứng.} Bộ chấm nộp bài được huấn luyện trên heatmap của các mô hình giấu bộ dữ liệu học 2 epoch, nhưng được áp lên mô hình học 5 epoch trên toàn bộ dữ liệu, mà heatmap có thể sắc hơn. Chúng tôi đã kiểm tra đường chạy của mã, nhưng chưa kiểm tra dịch chuyển phân bố này.
 
 \paragraph{Kiểm tra gói nộp.} Trước khi nộp v6, chúng tôi chạy \texttt{run.py} thật với mô hình large và huge giấu PETA, xuất sang TorchScript, và bộ chấm huấn luyện không có PETA, trên toàn bộ 10.314 người của PETA. AP từ \texttt{run.py} tăng từ 0.9351 lên 0.9377, khớp với giao thức thẩm định. Đặc trưng do \texttt{run.py} tính có tương quan 0.98 đến 1.00 với đặc trưng lúc huấn luyện, với sai khác nhỏ do chạy fp16 thay cho bf16. Gói nộp thật được chạy thêm trong môi trường PyTorch 2.4.1 giống máy chấm. Toạ độ khớp trùng với bài v3 trên 300 ảnh, sai khác 0 pixel, lời gọi với nhiều khung trong một ảnh chạy đúng, và thời gian khoảng 45 ms một ảnh trên A100. Với 30.245 khung, thời gian ước lượng khoảng 23 phút, trong giới hạn 2 giờ.
 
@@ -516,16 +558,29 @@ L + H + bộ chấm (v6), A100, gọi từng ảnh & khoảng 45 ms một khung 
 %=====================================================================
 \section{Thảo luận}
 
-\paragraph{Các hướng đã cân nhắc và bị loại.} Gán nhãn giả trên ảnh chấm là hướng phổ biến nhất trong thích nghi miền cho tư thế, nhưng bị luật thi cấm rõ ràng. Gán nhãn giả trên ảnh không nhãn của chính ba bộ dữ liệu huấn luyện là hợp lệ, nhưng chỉ thêm dữ liệu từ các miền đã có, nên khó giúp tổng quát hoá sang miền mới. Chúng tôi không thử hướng này. Tăng độ phân giải ảnh vào lên 384×288 thường tăng AP trên COCO, nhưng ViTPose+ được tiền huấn luyện ở 256×192, nên cần nội suy vị trí mã hoá từ lưới 16×12 lên 24×18, và chi phí tính toán tăng khoảng 2,25 lần. Chúng tôi đã viết phần nội suy nhưng dừng trước khi huấn luyện, nên không có kết luận thực nghiệm cho hướng này.
+\paragraph{Các hướng đã cân nhắc và bị loại.} Gán nhãn giả trên ảnh chấm là hướng phổ biến nhất trong thích nghi miền cho tư thế~\cite{regda,kim2022}, nhưng bị luật thi cấm rõ ràng. Gán nhãn giả trên ảnh không nhãn của chính ba bộ dữ liệu huấn luyện là hợp lệ, nhưng chỉ thêm dữ liệu từ các miền đã có. Backbone DINOv3 và chưng cất từ mô hình nền tảng bị luật cấm.
 
-\paragraph{Khoảng cách tới điểm tin cậy lý tưởng.} Bộ chấm học được mới lấy lại khoảng 19\% khoảng cách giữa điểm mặc định và điểm lý tưởng (0.0025 trên 0.0135). Phần còn lại có thể đến từ thông tin mà heatmap đầu ra không chứa, như việc khung cắt có hai người hay không. Một hướng tiếp theo là dùng đặc trưng bên trong backbone như CCNet, với cái giá là phải huấn luyện thêm một nhánh và đóng gói lại mô hình.
+\subsection{Thử nghiệm bổ sung sau khi nộp}
+\label{sec:extra}
 
-\paragraph{Giới hạn.} Mỗi cấu hình thẩm định chỉ được huấn luyện một lần, nên chưa có ước lượng nhiễu giữa các lần chạy cho Track 3. Các mô hình thẩm định học 2 epoch, trong khi mô hình nộp bài học 5 epoch, nên đặc trưng của bộ chấm trên tập chấm có thể lệch nhẹ so với lúc huấn luyện bộ chấm. Giải thích về việc huge tổng quát hoá tốt hơn large chưa được kiểm chứng trực tiếp.
+Sau v6, chúng tôi thuê thêm 4 GPU để thử ba hướng còn lại trên fold giấu PETA, mỗi lần chạy 1 đến 2 epoch. Không hướng nào đáng đóng gói.
+
+\paragraph{Ảnh vào 384×288.} Chúng tôi nội suy lưới mã hoá vị trí từ 16×12 lên 24×18, dùng heatmap 96×72 với $\sigma=3$. Large ở 384×288 đạt 0.9330 sau 1 epoch, so với 0.9337 của large ở 256×192; trên fold PA100k là 0.9065 so với 0.9048. Gộp heatmap của large 256 và large 384 (phóng heatmap 64×48 lên 96×72) đạt 0.9366 trên PETA, cao hơn từng mô hình khoảng 0.004. Nhưng khi giữ nguyên điểm tin cậy lấy từ large 256 và huge 256, thêm large 384 vào bản gộp chỉ đổi AP từ 0.9365 sang 0.9366. Toạ độ khớp vì vậy không tốt hơn; phần tăng khi gộp đến từ điểm tin cậy, thứ mà bộ chấm của v6 đã cải thiện.
+
+\paragraph{Thay head.} Giữ backbone large 256×192 và 1 epoch, chúng tôi so head heatmap gốc (0.9324) với ba head khác. Head siêu phân giải, thêm một tầng giải chập để ra heatmap 128×96, đạt 0.9312 với điểm mặc định và 0.9343 khi bỏ kênh tai, đều trong nhiễu. Head SimCC~\cite{simcc}, phân loại toạ độ $x$ và $y$ với hai ô mỗi pixel, đạt 0.9253. Head kết hợp heatmap và SimCC cho 0.9129 khi lấy toạ độ từ SimCC và 0.9324 khi lấy từ heatmap. Lợi thế của SimCC mà tài liệu báo cáo xuất hiện chủ yếu ở ảnh vào rất nhỏ; ở đây khung đã được phóng lên 256×192, và heatmap kết hợp DARK đã đủ chính xác.
+
+\paragraph{Kết luận của các thử nghiệm.} Với các mô hình được luật cho phép, độ chính xác toạ độ khớp đã bão hoà ở ViTPose++ large và huge. Phần còn lại nằm ở điểm tin cậy và ở lỗi nhầm trái phải.
+
+\paragraph{Khoảng cách tới điểm tin cậy lý tưởng.} Bộ chấm học được mới lấy lại 12 đến 30\% khoảng cách giữa điểm mặc định và điểm lý tưởng, và phần lớn phần đó là việc bỏ qua kênh tai. Phần còn lại có thể đến từ thông tin mà heatmap đầu ra không chứa, như việc khung cắt có hai người hay không. Một hướng tiếp theo là dùng đặc trưng bên trong backbone như CCNet, với cái giá là phải huấn luyện thêm một nhánh và đóng gói lại mô hình.
+
+\paragraph{Giới hạn.} Mỗi cấu hình thẩm định chỉ được huấn luyện một lần, và dao động giữa các epoch chỉ là cận dưới của nhiễu huấn luyện. Các mô hình thẩm định học 2 epoch, trong khi mô hình nộp bài học 5 epoch. Phép so trên khớp chung chỉ chạy trên PETA. Dữ liệu giấu bộ dữ liệu có một khung mỗi ảnh, khác một phần tập chấm. Việc dùng ViTPose++ dựa trên cách hiểu luật đã nêu ở mục~\ref{sec:task}.
+
+\paragraph{Tác động xã hội.} Ước lượng tư thế trên video giám sát có thể hỗ trợ việc theo dõi cá nhân. Báo cáo chỉ trình bày kết quả kỹ thuật và không công bố mô hình đã huấn luyện.
 
 %=====================================================================
 \section{Kết luận}
 
-Chúng tôi trình bày một hệ thống ước lượng tư thế cho ảnh giám sát của miền camera chưa thấy, đạt 0.8992 OKS AP trên tập chấm ẩn của UPAR Challenge 2027 Track 3. Tinh chỉnh ViTPose+ trên dữ liệu UPAR là bước quyết định, đưa AP trên miền giấu từ 0.70 lên 0.93. Gộp heatmap của hai mô hình lớn và học lại điểm tin cậy của từng người tạo ra các bước tăng nhỏ nhưng nhất quán giữa giao thức thẩm định và tập chấm. Phân tích cho thấy điểm tin cậy là một phần đáng kể và thường bị bỏ qua của OKS AP. Một bộ chấm nhẹ chỉ dùng thống kê của heatmap đã đủ để cải thiện điểm, và vẫn còn khoảng cách đáng kể tới điểm tin cậy lý tưởng.
+Khi khung người được cho sẵn, OKS AP bị chặn giữa tỉ lệ dự đoán đúng và bình phương của nó, và điểm tin cậy quyết định hệ thống nằm ở đâu giữa hai cận. Trên camera giám sát chưa thấy, phần này đáng giá hơn một mô hình thứ hai, và trên hai trong ba bộ dữ liệu gần như toàn bộ nằm ở ngưỡng OKS 0.95. Một bộ chấm học được lấy lại một phần, chủ yếu nhờ bỏ qua các kênh không được chấm. Phần lớn mức tăng ``0.23'' của tinh chỉnh là học định nghĩa điểm khớp vùng đầu, còn nguồn lỗi lớn nhất trên PETA là nhầm trái phải, thứ mà cả điểm tin cậy lẫn kiểm tra lật đều không nhìn thấy. Hệ thống đạt 0.8992 OKS AP trên tập chấm ẩn của UPAR Challenge 2027 Track 3.
 
 %=====================================================================
 \begin{thebibliography}{99}\small
@@ -541,6 +596,11 @@ Chúng tôi trình bày một hệ thống ước lượng tư thế cho ảnh g
 \bibitem{gpose} G.~Papandreou, T.~Zhu, N.~Kanazawa và cộng sự. Towards accurate multi-person pose estimation in the wild. \textit{CVPR}, 2017.
 \bibitem{ronchi} M.~R.~Ronchi, P.~Perona. Benchmarking and error diagnosis in multi-instance pose estimation. \textit{ICCV}, 2017.
 \bibitem{ccnet} K.~Gu, R.~Chen, X.~Yu, A.~Yao. On the calibration of human pose estimation. \textit{ICML}, 2024.
+\bibitem{dekr} Z.~Geng, K.~Sun, B.~Xiao, Z.~Zhang, J.~Wang. Bottom-up human pose estimation via disentangled keypoint regression. \textit{CVPR}, 2021.
+\bibitem{regda} J.~Jiang, Y.~Ji, X.~Wang, Y.~Liu, J.~Wang, M.~Long. Regressive domain adaptation for unsupervised keypoint detection. \textit{CVPR}, 2021.
+\bibitem{kim2022} D.~Kim, K.~Wang, K.~Saenko, M.~Betke, S.~Sclaroff. A unified framework for domain adaptive pose estimation. \textit{ECCV}, 2022.
+\bibitem{simcc} Y.~Li, S.~Yang, P.~Liu và cộng sự. SimCC: A simple coordinate classification perspective for human pose estimation. \textit{ECCV}, 2022.
+\bibitem{lightgbm} G.~Ke và cộng sự. LightGBM: A highly efficient gradient boosting decision tree. \textit{NeurIPS}, 2017.
 \bibitem{friedman} J.~H.~Friedman. Greedy function approximation: A gradient boosting machine. \textit{Annals of Statistics}, 2001.
 \end{thebibliography}
 

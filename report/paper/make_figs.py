@@ -278,24 +278,27 @@ def _ap_per_threshold(name, z, score):
 
 
 def fig_thresholds():
+    """Mức tăng AP so với điểm mặc định theo ngưỡng OKS, mỗi miền giấu một ô: bộ chấm học được, điểm mặc định bỏ hai
+    kênh tai (không bao giờ có nhãn), và OKS thật (cắt ở trục, giá trị ghi trên cột)."""
     data, resc = lodo_scores()
-    thr = np.arange(.5, .96, .05)
-    fig, ax = plt.subplots(figsize=(4.8, 2.6))
-    tot = np.zeros(10)
-    for n in NAMES:
-        z = data[n]
-        d = _ap_per_threshold(n, z, resc[n]) - _ap_per_threshold(n, z, z["X"][:, 70])
-        tot += d / 3
-    ora = np.zeros(10)
-    for n in NAMES:
-        z = data[n]
-        ora += (_ap_per_threshold(n, z, z["oks"]) - _ap_per_threshold(n, z, z["X"][:, 70])) / 3
-    ax.bar(thr, ora, width=.035, color=GRAY, label="OKS thật (lý tưởng)")
-    ax.bar(thr, tot, width=.02, color=BLUE, label="bộ chấm học được")
-    ax.set_xlabel("ngưỡng OKS"); ax.set_ylabel("AP so với điểm mặc định"); ax.legend(frameon=False, fontsize=7.2)
-    ax.set_xticks(thr, [f"{t:.2f}" for t in thr], fontsize=7)
-    fig.tight_layout(); fig.savefig(FIG / "per_threshold.png"); plt.close(fig)
-    print("learned", tot.round(4)); print("oracle", ora.round(4))
+    thr = np.arange(.5, .96, .05); keep = [k for k in range(17) if k not in (3, 4)]; top = 2.4
+    lab = {"peta": "giấu PETA", "pa100k": "giấu PA100k", "market": "giấu Market1501"}
+    fig, axs = plt.subplots(1, 3, figsize=(7.4, 2.5), sharey=True)
+    for ax, n in zip(axs, NAMES):
+        z = data[n]; base = _ap_per_threshold(n, z, z["X"][:, 70])
+        g = {k: (_ap_per_threshold(n, z, sc) - base) * 100 for k, sc in
+             (("ora", z["oks"]), ("ears", z["X"][:, :17][:, keep].mean(1)), ("lrn", resc[n]))}
+        ax.bar(thr, np.minimum(g["ora"], top), width=.04, color=GRAY, label="OKS thật (lý tưởng)")
+        for t, v in zip(thr, g["ora"]):
+            if v > top:
+                ax.text(t, top + .05, f"{v:.1f}", ha="center", fontsize=6.4, color=MUTED)
+        ax.bar(thr - .009, g["ears"], width=.017, color=ORANGE, label="mặc định bỏ kênh tai")
+        ax.bar(thr + .009, g["lrn"], width=.017, color=BLUE, label="bộ chấm học được")
+        ax.axhline(0, color=MUTED, lw=.6); ax.set_ylim(-.3, top + .4)
+        ax.set_xticks(thr[::2], [f"{t:.2f}" for t in thr[::2]], fontsize=7); ax.set_title(lab[n], fontsize=8.4, loc="left")
+        ax.set_xlabel("ngưỡng OKS", fontsize=8); ax.grid(axis="x", visible=False)
+    axs[0].set_ylabel("ΔAP so với mặc định (điểm %)", fontsize=8); axs[0].legend(frameon=False, fontsize=6.6, loc="upper left")
+    fig.tight_layout(w_pad=.5); fig.savefig(FIG / "per_threshold.png"); plt.close(fig)
 
 
 def fig_noise_curve():
