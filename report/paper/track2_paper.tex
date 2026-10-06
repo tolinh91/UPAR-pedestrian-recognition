@@ -1,0 +1,616 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{fontspec}
+\setmainfont{texgyretermes}[Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic]
+\setsansfont{texgyreheros}[Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic]
+\setmonofont{lmmono10}[Extension=.otf,UprightFont=*-regular]
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{graphicx,booktabs,tabularx,array,amsmath,amssymb,float,enumitem,xcolor}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage[most]{tcolorbox}
+\usepackage[colorlinks=true,linkcolor=teal!60!black,urlcolor=teal!60!black,citecolor=teal!60!black]{hyperref}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc}
+
+\definecolor{acc}{HTML}{2A78D6}
+\definecolor{org}{HTML}{EB6834}
+\titleformat{\section}{\Large\sffamily\bfseries\color{acc!75!black}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\sffamily\bfseries}{\thesubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{12pt}{5pt}
+\titlespacing*{\subsection}{0pt}{8pt}{3pt}
+\setlist{itemsep=2pt,topsep=3pt}
+\renewcommand{\arraystretch}{1.18}
+\newtcolorbox{ghichu}[1][Điểm cần nhớ]{colback=acc!5,colframe=acc!70!black,fonttitle=\sffamily\bfseries,title=#1,
+  boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+\captionsetup{justification=raggedright,singlelinecheck=false}
+\graphicspath{{figs/}}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\refname}{Tài liệu tham khảo}
+\renewcommand{\abstractname}{Tóm tắt}
+\setcounter{topnumber}{3}\setcounter{totalnumber}{4}\renewcommand{\topfraction}{0.9}\renewcommand{\textfraction}{0.1}\renewcommand{\floatpagefraction}{0.8}
+\newcommand{\ndom}{\mathrm{ndom}}
+
+\begin{document}
+
+\begin{center}
+{\sffamily\bfseries\LARGE Truy xuất người theo thuộc tính trên miền ảnh chưa thấy:\\[2pt] xếp hạng bằng log-likelihood của vector thuộc tính}\\[8pt]
+{\large Báo cáo kỹ thuật, UPAR Challenge 2027, Track 2 (Attribute-Based Person Retrieval)}\\[6pt]
+{\small Tài khoản Codabench \texttt{tannguyenbmt47} \quad Ngày 04/10/2026}
+\end{center}
+
+\begin{abstract}
+\noindent Track 2 của UPAR Challenge 2027 cho một truy vấn là vector nhị phân 40 thuộc tính và yêu cầu xếp hạng toàn bộ ảnh của một gallery sao cho những người có đúng vector đó đứng đầu. Bài nộp được chấm bằng mADM, một biến thể của mean average precision có cộng điểm cho các ảnh khớp gần. Báo cáo cuộc thi năm 2023 và 2024 ghi nhận rằng không đội nào vượt được baseline của ban tổ chức ở track này. Hệ thống của chúng tôi đạt 0.6365 mADM trên tập chấm ẩn, đứng đầu bảng xếp hạng tại thời điểm nộp. Hệ thống dùng một mô hình nhận dạng thuộc tính để ước lượng 40 xác suất cho mỗi ảnh, rồi chấm mỗi cặp truy vấn và ảnh bằng log-xác suất ảnh đó có đúng vector truy vấn. Lập luận trung tâm của báo cáo là với hàm xếp hạng này, chất lượng của cả vector xác suất trên miền mới, đo bằng log-likelihood, quyết định kết quả, chứ không phải khả năng phân biệt từng thuộc tính đo bằng AUC. Trên 14 biến thể mô hình, mADM tương quan với log-likelihood âm trên một ảnh ($r=-0.85$) chặt hơn hẳn với AUC ($r=+0.61$). Từ quan sát đó, chúng tôi chọn ba thành phần làm xác suất tốt hơn, gồm làm mềm nhãn để chặn mức phạt của nhãn sai, entropy chéo theo nhóm thuộc tính loại trừ nhau, và chưng cất từ hai mô hình thầy lớn bằng function matching. Ba thành phần này tăng mADM lần lượt khoảng 0.027, 0.016 và 0.017 trên giao thức thẩm định. Ngược lại, mọi tinh chỉnh ở bước chấm điểm như nhiệt độ, trọng số thuộc tính hay ràng buộc nhóm đều không ổn định giữa các miền giấu, và bị loại.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=====================================================================
+\section{Giới thiệu}
+
+Truy xuất người theo thuộc tính trả lời câu hỏi ``tìm tất cả những người là nam trưởng thành, mặc áo đỏ, quần xám, đeo ba lô và đội mũ'' trên một kho ảnh camera. Khác với tìm người bằng ảnh mẫu (person re-identification), truy vấn ở đây là một mô tả ngữ nghĩa và không cần một ảnh của người cần tìm. Khác với tìm người bằng văn bản tự do, truy vấn là một vector nhị phân cố định trên một từ vựng thuộc tính đã thống nhất. Bài toán này có lợi thế về quyền riêng tư vì chỉ dùng thuộc tính mềm thay cho đặc trưng nhận dạng cá nhân~\cite{upar24}.
+
+Track 2 của UPAR Challenge 2027 dùng cùng dữ liệu và cùng ràng buộc tính toán với Track 1, nhưng thay chỉ số phân loại bằng một chỉ số xếp hạng. Điểm khó của track này được ghi nhận rõ trong hai báo cáo cuộc thi trước. Năm 2023 và năm 2024 đều không có đội nào vượt baseline của ban tổ chức, và khoảng cách giữa baseline và đội thứ hai năm 2024 là 11,2 điểm mADM~\cite{upar23,upar24}. Ban tổ chức cho rằng các mô hình nhận dạng thuộc tính mạnh trở nên quá tự tin hoặc thiếu tự tin trên miền mới, và điều này làm hỏng thứ hạng vì thứ hạng được tính từ chính các giá trị tin cậy~\cite{upar24}.
+
+Báo cáo này đi từ nhận định đó tới một hệ thống cụ thể. Chúng tôi trình bày bốn đóng góp.
+
+\begin{enumerate}[leftmargin=1.4em]
+\item Một phân tích chỉ số mADM, cho thấy điểm của mỗi truy vấn xấp xỉ mức khớp trung bình của phần đầu danh sách, và xếp hạng theo log-likelihood của cả vector thuộc tính cho mức khớp đó cao hơn khoảng cách L1 của baseline ở cả sáu chỉ số xếp hạng (mục~\ref{sec:metric} và~\ref{sec:score}).
+\item Bằng chứng thực nghiệm rằng với hàm xếp hạng này, mADM bám theo log-likelihood âm trên một ảnh chứ không bám theo AUC. Hệ quả là tiêu chí chọn mô hình của Track 1 chọn sai mô hình cho Track 2 (mục~\ref{sec:proxy}).
+\item Ba thay đổi ở bước huấn luyện làm xác suất trên miền mới tốt hơn, mỗi thay đổi được giải thích bằng cơ chế cụ thể của hàm log-likelihood (mục~\ref{sec:method}).
+\item Một đánh giá có kiểm soát trên ba miền giấu cho các tinh chỉnh ở bước chấm điểm, cho thấy chúng không ổn định giữa các miền và không nên dùng (mục~\ref{sec:robust}).
+\end{enumerate}
+
+%=====================================================================
+\section{Bài toán và chỉ số đánh giá}
+\label{sec:task}
+
+\subsection{Truy vấn và gallery}
+
+Dữ liệu ảnh giống Track 1, gồm khoảng 131 nghìn ảnh có nhãn 40 thuộc tính từ PA100k~\cite{pa100k}, Market1501~\cite{market} và PETA~\cite{peta}. Mỗi truy vấn là một vector $q\in\{0,1\}^{40}$. Một ảnh trong gallery được coi là khớp với truy vấn khi vector nhãn của nó bằng $q$ ở cả 40 vị trí. Theo cách ban tổ chức tạo truy vấn, mỗi vector nhãn khác nhau xuất hiện trong gallery trở thành một truy vấn. Trên tập val có 3462 truy vấn, mỗi truy vấn có ít nhất một ảnh khớp. Chương trình nhận toàn bộ truy vấn và toàn bộ ảnh gallery, rồi trả về một ma trận điểm kích thước số truy vấn nhân số ảnh.
+
+Ba gallery val có cấu trúc rất khác nhau. Ở PETA, 61\% truy vấn chỉ có một ảnh khớp. Tỉ lệ này là 42\% ở PA100k và 15\% ở Market1501, nơi trung vị số ảnh khớp của một truy vấn là 10. Cùng một mô hình ViT-L cho mADM cùng miền 0.805 ở PETA, 0.724 ở PA100k và 0.758 ở Market1501. Vì vậy khi so hai mô hình trên nhiều gallery, chúng tôi so hiệu ghép cặp trong từng gallery thay vì so trung bình mADM thô.
+
+\subsection{Chỉ số mADM}
+\label{sec:metric}
+
+\paragraph{Vấn đề với mAP thông thường.} mAP chỉ tính các ảnh khớp chính xác. Một ảnh lệch một thuộc tính so với truy vấn bị coi sai giống hệt một ảnh lệch 20 thuộc tính. Trong ứng dụng thật, người dùng vẫn được lợi khi các ảnh gần đúng đứng trước các ảnh hoàn toàn sai.
+
+\paragraph{Định nghĩa.} mADM (mean average degree of match) cộng điểm cho các ảnh khớp gần. Với truy vấn $q$ và ảnh $g$, gọi $\mathrm{dom}(q,g)$ là tỉ lệ thuộc tính bằng nhau giữa $q$ và nhãn của $g$. Mức khớp được chuẩn hoá theo gallery của chính truy vấn đó:
+\begin{equation}
+\ndom(q,g)=\max\!\left(0,\ \frac{\mathrm{dom}(q,g)-\overline{\mathrm{dom}}_q}{\max_{g'}\mathrm{dom}(q,g')-\overline{\mathrm{dom}}_q}\right),
+\end{equation}
+với $\overline{\mathrm{dom}}_q$ là trung bình của dom trên toàn gallery. Ảnh khớp chính xác có $\ndom=1$, ảnh có mức khớp dưới trung bình có $\ndom=0$. Gọi $r_1<\dots<r_R$ là thứ hạng của $R$ ảnh khớp chính xác. Điểm của truy vấn và chỉ số tổng là
+\begin{equation}
+\mathrm{ADM}(q)=\frac{1}{R}\sum_{m=1}^{R}\frac{1}{r_m}\sum_{j=1}^{r_m}\ndom(q,g_{(j)}), \qquad \mathrm{mADM}=\frac{1}{|Q|}\sum_{q}\mathrm{ADM}(q),
+\end{equation}
+với $g_{(j)}$ là ảnh ở vị trí $j$. Công thức có cùng cấu trúc với AP, chỉ thay số ảnh khớp chính xác trong $r_m$ vị trí đầu bằng tổng ndom của $r_m$ ảnh đó.
+
+\paragraph{Một ảnh khớp gần được bao nhiêu điểm.} Trên PETA, trung bình dom của mỗi truy vấn khoảng 0.82, với khoảng phân vị 10 đến 90 là 0.78 đến 0.85, và ảnh tốt nhất luôn khớp chính xác ($\max\mathrm{dom}=1$). Một ảnh lệch $j$ thuộc tính có $\mathrm{dom}=1-j/40$, nên
+\begin{equation}
+\ndom(j)\approx\frac{1-j/40-0.82}{1-0.82}=1-\frac{j}{7.2}.
+\end{equation}
+Hình~\ref{fig:ndom} cho thấy ảnh lệch 1 thuộc tính nhận 0.86 điểm, lệch 2 nhận 0.72, và điểm về gần 0 khi lệch khoảng 7 thuộc tính.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.55\linewidth]{ndom.png}
+\caption{Điểm ndom mà một ảnh nhận được theo số thuộc tính lệch so với truy vấn, ở trung bình dom 0.82 điển hình của PETA. Ảnh lệch 1 đến 2 thuộc tính vẫn nhận 72 đến 86\% điểm của một ảnh khớp chính xác.}
+\label{fig:ndom}
+\end{figure}
+
+\paragraph{mADM thưởng gì.} Mỗi ảnh ảnh hưởng tới ADM theo hai đường. Nếu ảnh khớp chính xác, vị trí của nó là một $r_m$ và quyết định mẫu số $1/r_m$. Nếu ảnh đứng trước một ảnh khớp chính xác, ndom của nó được cộng vào tử số. Lấy kỳ vọng theo độ bất định của mô hình,
+\begin{equation}
+\mathbb{E}[\mathrm{ADM}]\approx\frac{1}{R}\sum_{i}\frac{P(\text{ảnh ở vị trí }i\text{ khớp})}{i}\sum_{j\le i}\mathbb{E}[\ndom_{(j)}].
+\label{eq:eadm}
+\end{equation}
+Thành phần thứ nhất đòi hỏi xếp ảnh có xác suất khớp chính xác cao lên đầu. Thành phần thứ hai đòi hỏi các ảnh đứng trước có mức khớp kỳ vọng cao. Có thể viết lại ADM dưới dạng $\mathrm{ADM}(q)=\frac1R\sum_m D(r_m)$, với $D(r)$ là ndom trung bình của $r$ ảnh đầu danh sách. Mỗi ảnh khớp chính xác chỉ chọn một điểm đánh giá, còn giá trị tại điểm đó là chất lượng trung bình của cả phần đầu. Mục~\ref{sec:difficulty} cho thấy trên thực tế thành phần thứ hai chiếm phần lớn giá trị của mADM.
+
+\subsection{Ràng buộc vận hành}
+
+Chương trình chạy trong cùng môi trường với Track 1, gồm 6 luồng CPU, không GPU, không mạng, PyTorch 2.4.1, và giới hạn 3600 giây. Chi phí chủ yếu là tính 40 xác suất cho mỗi ảnh gallery bằng backbone. Ma trận điểm có kích thước số truy vấn nhân số ảnh. Với khoảng 3500 truy vấn và 29 nghìn ảnh, một ma trận float64 chiếm khoảng 0,8 GB. Gói nộp tính ma trận này một lần bằng phép nhân ma trận rồi chuyển sang float32 trước khi trả về, và chạy được trong giới hạn bộ nhớ của container chấm.
+
+\begin{ghichu}
+mADM có cấu trúc của AP, nhưng giá trị tại mỗi điểm đánh giá là mức khớp trung bình của cả phần đầu danh sách. Một hàm xếp hạng tốt cho mADM phải đưa lên đầu những ảnh khớp ở gần như mọi thuộc tính, và việc này đòi hỏi cả 40 xác suất thành phần đều có chất lượng tốt trên miền mới.
+\end{ghichu}
+
+%=====================================================================
+\section{Nghiên cứu liên quan}
+
+\paragraph{Truy xuất theo thuộc tính.} Hướng phổ biến nhất dùng một mô hình nhận dạng thuộc tính rồi đo khoảng cách giữa vector xác suất và truy vấn. Baseline của UPAR~\cite{upar} dùng khoảng cách L1, tương đương số thuộc tính lệch kỳ vọng. Specker và Beyerer~\cite{specker21} đề xuất một độ đo có hiệu chỉnh xác suất, có trọng số theo độ tin cậy của từng thuộc tính và dựa trên phân bố, và sau đó chỉ ra rằng một mô hình nhận dạng thuộc tính được cân bằng tốt giúp truy xuất tốt hơn~\cite{specker23}. Chúng tôi thử lại cả hiệu chỉnh nhiệt độ lẫn trọng số thuộc tính trên giao thức nhiều miền giấu ở mục~\ref{sec:robust}.
+
+\paragraph{Tìm người bằng văn bản.} Các phương pháp tìm người bằng văn bản tự do học một không gian nhúng chung cho ảnh và văn bản~\cite{cuhkpedes}. Cách tiếp cận này cần dữ liệu cặp ảnh và câu mô tả, và không khai thác được cấu trúc nhị phân cố định của truy vấn trong bài toán này.
+
+\paragraph{Hiệu chỉnh xác suất.} Guo và cộng sự~\cite{guo} chỉ ra rằng mạng nơ-ron hiện đại thường quá tự tin, và hiệu chỉnh nhiệt độ khớp trên tập kiểm định cùng miền sửa được phần lớn sai lệch này. Trên miền mới, hiệu chỉnh khớp trên miền nguồn không còn đảm bảo~\cite{ovadia}. Entropy chéo là một quy tắc chấm điểm đúng đắn (proper scoring rule), nên tối thiểu hoá nó trên dữ liệu huấn luyện cho xác suất đúng trên phân bố huấn luyện~\cite{gneiting}.
+
+\paragraph{Xếp hạng lại.} Trong tìm người bằng ảnh, xếp hạng lại bằng láng giềng tương hỗ~\cite{kreciprocal} hoặc mở rộng truy vấn tăng mAP đáng kể. Các kỹ thuật này dùng thống kê trên toàn gallery tại thời điểm chấm. Chúng tôi thảo luận ràng buộc của luật thi với nhóm kỹ thuật này ở mục~\ref{sec:rules}.
+
+\paragraph{Chưng cất.} Chưng cất kiến thức~\cite{hinton} truyền xác suất mềm của mô hình thầy cho mô hình trò. Beyer và cộng sự~\cite{patient} cho thấy chưng cất hiệu quả nhất khi thầy và trò nhìn cùng một ảnh tăng cường, kể cả ảnh trộn, và khi huấn luyện đủ lâu.
+
+%=====================================================================
+\section{Hàm xếp hạng}
+\label{sec:score}
+
+\paragraph{Vấn đề.} Mô hình nhận dạng thuộc tính cho mỗi ảnh $g$ một vector xác suất $p_g\in[0,1]^{40}$. Cần một hàm $s(q,g)$ sao cho xếp gallery theo $s$ giảm dần cho mADM cao.
+
+\paragraph{Khoảng trống của baseline.} Baseline dùng
+\begin{equation}
+s_{L1}(q,g)=-\sum_{k=1}^{40}|q_k-p_{gk}| .
+\end{equation}
+Khi $p_g$ là xác suất đúng, $-s_{L1}$ là số thuộc tính lệch kỳ vọng. Hàm này đo đúng thành phần thứ hai của phương trình~\eqref{eq:eadm} nhưng không đo xác suất khớp chính xác. Ví dụ, ảnh A có 40 xác suất đều bằng 0.9 về phía truy vấn có số lệch kỳ vọng 4, và xác suất khớp chính xác $0.9^{40}\approx0.015$. Ảnh B có 39 xác suất bằng 1 về phía truy vấn và một xác suất bằng 0.5 có số lệch kỳ vọng 0.5, và xác suất khớp chính xác 0.5. L1 xếp B trên A, đúng. Nhưng ảnh C có 36 thuộc tính chắc chắn đúng và 4 thuộc tính chắc chắn sai có số lệch kỳ vọng 4, bằng A, dù xác suất khớp chính xác của C bằng 0. L1 không phân biệt A và C.
+
+\paragraph{Thuộc tính cần có.} Hàm xếp hạng phải tăng theo xác suất ảnh có đúng vector truy vấn. Theo nguyên lý xếp hạng theo xác suất~\cite{prp}, xếp tài liệu theo xác suất liên quan giảm dần tối đa hoá số tài liệu liên quan kỳ vọng ở mọi độ sâu danh sách, nên tối ưu cho AP khi các xác suất đúng. Với mADM, ảnh khớp chính xác là ảnh có ndom cao nhất, và một ảnh có xác suất khớp chính xác cao cũng có xác suất cao chỉ lệch ít thuộc tính.
+
+\paragraph{Cơ chế.} Giả sử các thuộc tính độc lập có điều kiện khi biết ảnh. Xác suất ảnh $g$ có đúng vector $q$ là tích của 40 xác suất thành phần, và log của nó là
+\begin{equation}
+s_{LL}(q,g)=\sum_{k=1}^{40}\Big[q_k\log p_{gk}+(1-q_k)\log(1-p_{gk})\Big]
+=q^{\top}\Big(\log\frac{p_g}{1-p_g}\Big)+\sum_k\log(1-p_{gk}).
+\label{eq:ll}
+\end{equation}
+Dạng thứ hai cho thấy ma trận điểm của mọi cặp truy vấn và ảnh là một phép nhân ma trận giữa ma trận truy vấn và ma trận logit, cộng một vector cột phụ thuộc ảnh. Chi phí của bước chấm điểm vì vậy không đáng kể so với backbone. Xác suất được kẹp trong $[10^{-4},1-10^{-4}]$ để tránh log của 0.
+
+\paragraph{Kết quả.} Trên tập val cùng miền, $s_{LL}$ hơn $s_{L1}$ từ 0.04 đến 0.08 mADM tuỳ gallery. Trên PETA giấu, ViT-B với head tuyến tính đạt 0.631 với $s_{LL}$ và 0.57 đến 0.58 với $s_{L1}$. Bảng~\ref{tab:llvsl1} cho thấy ưu thế của $s_{LL}$ lặp lại trên bốn mô hình và ở cả sáu chỉ số xếp hạng. Mức chênh này lớn hơn mọi khác biệt giữa các mô hình mà chúng tôi đo sau đó, nên phần còn lại của báo cáo dùng $s_{LL}$.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}llcccccc@{}}
+\toprule
+Mô hình (PETA giấu) & Hàm & mADM & mAP & mINP & R-1 & R-5 & R-10 \\
+\midrule
+ViT-B truy vấn & L1 & 0.5798 & 0.1998 & 0.1511 & 0.1798 & 0.3460 & 0.4192 \\
+ & $s_{LL}$ & 0.6270 & 0.2789 & 0.2184 & 0.2422 & 0.4640 & 0.5525 \\
+ViT-B truy vấn + group CE & L1 & 0.5896 & 0.2040 & 0.1524 & 0.1809 & 0.3562 & 0.4419 \\
+ & $s_{LL}$ & 0.6406 & 0.2980 & 0.2349 & 0.2626 & 0.4889 & 0.5876 \\
+ViT-L, KD DINOv3-L + CLIP-L & L1 & 0.6053 & 0.2169 & 0.1649 & 0.1985 & 0.3738 & 0.4515 \\
+ & $s_{LL}$ & 0.6635 & 0.3175 & 0.2559 & 0.2813 & 0.5139 & 0.5967 \\
+ViT-L, KD DINOv3-L + MetaCLIP2-H & L1 & 0.6057 & 0.2144 & 0.1642 & 0.1940 & 0.3698 & 0.4509 \\
+ & $s_{LL}$ & 0.6697 & 0.3231 & 0.2607 & 0.2881 & 0.5184 & 0.6058 \\
+\bottomrule
+\end{tabular}
+\caption{L1 so với log-likelihood trên bốn mô hình, gallery PETA giấu (1763 truy vấn). Log-likelihood thắng ở mọi chỉ số, với mADM cao hơn 0.047 đến 0.064 và Rank-1 cao hơn 0.06 đến 0.09. Mô hình tốt hơn làm khoảng cách giữa hai hàm rộng thêm, vì L1 không tận dụng được xác suất sắc hơn.}
+\label{tab:llvsl1}
+\end{table}
+
+\paragraph{Hệ quả.} Phương trình~\eqref{eq:ll} là tổng 40 số hạng log. Một thuộc tính bị dự đoán sai với độ tin cậy rất cao, ví dụ $p_{gk}=0.999$ trong khi nhãn là 0, đóng góp $\log(0.001)\approx-6.9$, đủ đẩy một ảnh khớp chính xác xuống cuối danh sách. Chất lượng của xác suất, gồm cả độ phân biệt lẫn độ lớn, vì vậy quan trọng hơn nhiều so với ở Track 1, nơi chỉ vị trí của xác suất so với ngưỡng 0.5 là có ý nghĩa.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{example.png}
+\caption{Một truy vấn thật trên gallery PETA giấu, xếp hạng bằng log-likelihood với mô hình ViT-L chưng cất. Hai ảnh khớp chính xác (viền xanh lá) đứng đầu. Các ảnh ở vị trí 3 đến 7 cùng có áo đỏ và mũ đỏ nhưng nhãn lệch 7 thuộc tính, nên chỉ nhận rất ít điểm ndom.}
+\label{fig:example}
+\end{figure}
+
+%=====================================================================
+\section{Giao thức thẩm định}
+\label{sec:proxy}
+
+\subsection{Giấu từng bộ dữ liệu và so ghép cặp}
+
+Như ở Track 1, điểm cùng miền không dự báo được điểm trên miền mới. Chúng tôi dùng giao thức giấu một bộ dữ liệu. Mô hình học từ train của hai bộ, rồi gallery val của bộ thứ ba được xếp hạng với các truy vấn của chính nó. Giấu PETA là phiên bản chính. Giấu Market1501 và giấu PA100k được dùng để kiểm tra tính ổn định giữa các miền.
+
+Hai lần chạy giống hệt nhau của ViT-B lệch nhau 0.0007 mADM. Sai số chuẩn của hiệu ghép cặp giữa hai mô hình, tính bằng bootstrap trên các truy vấn, khoảng 0.0024 đến 0.0029. Chúng tôi chỉ chấp nhận một thay đổi khi hiệu ghép cặp lớn hơn khoảng hai lần sai số này và không đổi dấu ở các miền giấu khác.
+
+\subsection{Track 2 cần thống kê khác Track 1}
+\label{sec:nll}
+
+\paragraph{Quan sát.} Các mô hình đầu tiên của chúng tôi cho Track 2 được chọn bằng tiêu chí của Track 1, là Avg sau dời ngưỡng trên PETA giấu. Biến thể ViT-B có thêm entropy chéo theo nhóm (mục~\ref{sec:gce}) bị loại ở Track 1 vì Avg thấp hơn mốc 0.004. Trên Track 2, chính biến thể này đạt mADM 0.6424, so với 0.6261 của mốc. Hiệu +0.0164 có sai số chuẩn ghép cặp 0.0024, khoảng 7 lần sai số, và là biến thể ViT-B tốt nhất trong 15 lần chạy có logit.
+
+\paragraph{Giải thích.} Phương trình~\eqref{eq:ll} cho thấy $s_{LL}$ trung bình trên các ảnh khớp chính xác chính là log-likelihood của cả vector nhãn. Đại lượng tự nhiên để chọn mô hình cho Track 2 vì vậy là \textbf{NLL trên một ảnh} (tạm dịch: log-likelihood âm của vector nhãn đầy đủ, trung bình trên ảnh). NLL không phụ thuộc ngưỡng, nhưng khác AUC ở chỗ nó phạt cả sai lệch về độ lớn của xác suất, không chỉ sai lệch về thứ tự.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{auc_nll.png}
+\caption{mADM theo AUC (trái) và theo NLL trên một ảnh (phải) cho 14 biến thể mô hình trên PETA giấu. mADM tương quan chặt với NLL ($r=-0.85$) và lỏng với AUC ($r=+0.61$). ViT-L 160×80 có AUC thấp nhất nhưng mADM cao hơn mọi biến thể ViT-B truy vấn thường, vì NLL của nó thấp.}
+\label{fig:aucnll}
+\end{figure}
+
+Hình~\ref{fig:aucnll} xác nhận giải thích này trên 14 biến thể. Hệ số tương quan Pearson giữa mADM và NLL là $-0.85$, giữa mADM và AUC là $+0.61$. Ngoại lệ đáng chú ý là ViT-L 160×80, có AUC thấp nhất (0.896) nhưng mADM 0.6335, cao hơn mọi ViT-B truy vấn thường. Một ngoại lệ khác là ViT-B với lịch 3 epoch, có NLL cao nhưng mADM khá. Chúng tôi chưa giải thích được điểm này và coi nó là một quan sát cần lặp lại.
+
+\begin{ghichu}
+Với hàm xếp hạng log-likelihood, tiêu chí chọn mô hình phải là một thống kê đo cả thứ tự lẫn độ lớn của xác suất trên miền mới, như NLL trên ảnh giấu hoặc chính mADM ghép cặp. AUC và Avg của Track 1 chỉ đo một phần, và có thể loại nhầm biến thể tốt nhất.
+\end{ghichu}
+
+%=====================================================================
+\section{Phương pháp}
+\label{sec:method}
+
+\subsection{Tổng quan}
+
+Hình~\ref{fig:pipe} tóm tắt hệ thống của bài nộp tốt nhất (v6). Mô hình nhận dạng thuộc tính là DINOv3 ViT-B/16~\cite{dinov3} ở 256×128 với head truy vấn theo thuộc tính, giống Track 1. Ba thành phần ở các mục~\ref{sec:smooth} đến~\ref{sec:kd} được chọn vì chúng cải thiện xác suất trên miền mới. Ở bước suy luận, xác suất được dùng trực tiếp, không dời ngưỡng và không hiệu chỉnh nhiệt độ.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\sffamily\scriptsize, node distance=4mm and 5mm,
+  box/.style={draw=black!55, rounded corners=2pt, fill=white, align=center, minimum height=8mm, inner sep=3pt},
+  hl/.style={box, fill=acc!10, draw=acc!80!black},
+  arr/.style={-{Latex[length=2mm]}, black!65}]
+\node[box] (g) {Ảnh gallery\\ (G ảnh)};
+\node[hl, right=of g] (m) {DINOv3 ViT-B/16, 256×128\\ head truy vấn\\ (BCE mềm + group CE + KD)};
+\node[box, right=of m] (p) {logit $z_g$\\ $\to$ xác suất $p_g$};
+\node[box, below=6mm of p] (q) {Ma trận truy vấn\\ $Q\in\{0,1\}^{|Q|\times 40}$};
+\node[hl, right=8mm of $(p.east)!0.5!(q.east)$] (s) {$S = Q\,\mathrm{logit}(P)^{\top} + \mathbf{1}\,c^{\top}$\\ $c_g=\sum_k\log(1-p_{gk})$};
+\node[box, right=of s] (o) {Trả về\\ \texttt{distances} $=-S$};
+\draw[arr] (g)--(m); \draw[arr] (m)--(p); \draw[arr] (p.east)--(s.west |- p.east); \draw[arr] (q.east)--(s.west |- q.east); \draw[arr] (s)--(o);
+\end{tikzpicture}
+\caption{Hệ thống Track 2. Backbone tính 40 xác suất cho mỗi ảnh một lần. Điểm log-likelihood của mọi cặp truy vấn và ảnh là một phép nhân ma trận cộng một vector, nên chi phí chấm điểm không đáng kể so với backbone.}
+\label{fig:pipe}
+\end{figure}
+
+\subsection{Làm mềm nhãn để chặn mức phạt}
+\label{sec:smooth}
+
+\paragraph{Vấn đề.} Dữ liệu huấn luyện có nhãn sai, và trên miền mới các quy ước gán nhãn khác đi. Hình~\ref{fig:errors} cho thấy các lỗi có độ tin cậy cao nhất của một mô hình trên PETA giấu ở thuộc tính ``người già''. Mô hình đoán với xác suất gần 1, trong khi nhãn ghi ngược lại, và nhiều ảnh trông giống lỗi nhãn hơn là lỗi mô hình.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{errors_PETA.png}
+\caption{Các lỗi có độ tin cậy cao nhất ở nhóm tuổi trên PETA giấu. Mô hình trả lời với xác suất gần 0 hoặc gần 1 ngược với nhãn. Với hàm log-likelihood, mỗi lỗi như vậy trừ khoảng 7 nats vào điểm của ảnh nếu xác suất không bị chặn.}
+\label{fig:errors}
+\end{figure}
+
+\paragraph{Thuộc tính cần có.} Mức phạt của một thuộc tính sai trong phương trình~\eqref{eq:ll} phải bị chặn, để một nhãn sai hoặc một khác biệt quy ước không đẩy một ảnh khớp chính xác ra khỏi phần đầu danh sách.
+
+\paragraph{Cơ chế.} Làm mềm nhãn với hệ số $\epsilon=0.05$ đặt mục tiêu huấn luyện là $1-\epsilon/2=0.975$ thay cho 1 và $\epsilon/2=0.025$ thay cho 0. Entropy chéo đạt cực tiểu khi xác suất bằng mục tiêu, nên mô hình được khuyến khích không vượt khỏi khoảng $[0.025, 0.975]$ trên dữ liệu huấn luyện. Mức phạt tối đa của một thuộc tính sai vì vậy khoảng $-\log 0.025\approx3.7$ nats thay cho không giới hạn.
+
+\paragraph{Kết quả.} Chúng tôi mô phỏng việc bỏ làm mềm bằng cách đảo ngược đúng phép biến đổi của làm mềm và trọng số DeepMAR trên logit đã huấn luyện. Bỏ làm mềm làm mADM giảm 0.027 (từ 0.6261 xuống 0.5990), dù mAP tăng nhẹ. Bỏ trọng số DeepMAR làm mADM giảm 0.003. Chúng tôi giữ cả hai.
+
+\subsection{Entropy chéo theo nhóm thuộc tính loại trừ}
+\label{sec:gce}
+
+\paragraph{Vấn đề.} Phần lớn thuộc tính nằm trong các nhóm mà mỗi người có đúng một giá trị, như ba độ tuổi, ba độ dài tóc, 12 màu áo, 12 màu quần. Mô hình với 40 sigmoid độc lập phân bố xác suất cả lên những cấu hình không bao giờ xảy ra, như không có màu áo nào hoặc hai độ tuổi cùng lúc.
+
+\paragraph{Khoảng trống.} Hàm log-likelihood~\eqref{eq:ll} giả sử độc lập, nên xác suất của vector truy vấn bị chia cho các cấu hình không hợp lệ. Hai ảnh có cùng xác suất ``áo đỏ'' nhưng khác nhau ở xác suất ``áo cam'' vì thế có thể bị xếp sai thứ tự.
+
+\paragraph{Thuộc tính cần có.} Tích của các sigmoid trong một nhóm phải gần với một phân bố phân loại đúng, trong đó tổng xác suất trên nhóm gần 1 và một giá trị trội rõ.
+
+\paragraph{Cơ chế.} Với mỗi nhóm $\mathcal{G}$ có đúng một nhãn dương $c$ ở mẫu $i$, chúng tôi thêm vào loss số hạng entropy chéo phân loại trên logit của nhóm:
+\begin{equation}
+\mathcal{L}_{\text{GCE}}=-\frac{1}{n}\sum_{(i,\mathcal{G})}\log\frac{\exp z_{ic}}{\sum_{k\in\mathcal{G}}\exp z_{ik}},\qquad \mathcal{L}=\mathcal{L}_{\text{BCE}}+0.5\,\mathcal{L}_{\text{GCE}}.
+\end{equation}
+Số hạng này ép logit của giá trị đúng tách khỏi các giá trị khác trong nhóm. Các sigmoid vẫn độc lập ở bước suy luận, nên hàm xếp hạng không đổi. Số hạng này chỉ áp dụng cho các mẫu có đủ nhãn của nhóm và đúng một nhãn dương, vì một số mẫu PETA có hai màu cho một chiếc áo.
+
+\paragraph{Kết quả.} Trên ViT-B, entropy chéo theo nhóm tăng mADM 0.0164 và giảm NLL trên một ảnh từ 6.98 xuống 6.77, trong khi AUC chỉ thay đổi 0.001. Đây đúng là mẫu hình dự đoán bởi cơ chế. Số hạng này cải thiện độ lớn tương đối của xác suất trong nhóm, không cải thiện khả năng phân biệt từng thuộc tính.
+
+\subsection{Chưng cất từ hai thầy bằng function matching}
+\label{sec:kd}
+
+\paragraph{Vấn đề.} Ràng buộc CPU chỉ cho phép ViT-B chạy an toàn (mục~\ref{sec:lb}). Các mô hình lớn hơn cho xác suất tốt hơn rõ rệt. ViT-L 256×128 với head tuyến tính đạt NLL 6.57 và mADM 0.6697 trên PETA giấu, so với 6.98 và 0.6261 của ViT-B truy vấn, nhưng chạy gấp khoảng 3,5 lần.
+
+\paragraph{Ý tưởng cốt lõi.} Logit trung bình của các mô hình thầy lớn và khác kiểu tiền huấn luyện vừa xếp hạng tốt hơn, vừa có độ lớn ít cực đoan hơn logit của từng mô hình. Khớp trò với chúng cải thiện đúng đại lượng mà log-likelihood dùng.
+
+\paragraph{Cơ chế.} Hai thầy là DINOv3-L ở 176×96 và CLIP-L/14~\cite{clip} ở 168×84, mỗi thầy tinh chỉnh 3 epoch với head truy vấn. Loss của trò là $(1-\alpha)\mathcal{L}_{\text{nhãn}}+\alpha\,\mathcal{L}_{\text{KD}}$ với $\alpha=0.8$, trong đó $\mathcal{L}_{\text{KD}}$ là entropy chéo nhị phân giữa sigmoid logit của trò và sigmoid logit trung bình của thầy. Theo~\cite{patient}, với xác suất 0.5 một batch được thay bằng ảnh trộn bằng mixup hoặc CutMix và chỉ được học từ thầy, vì nhãn thật không mô tả ảnh trộn. Trò học 20 epoch, lâu hơn khoảng hai lần so với không chưng cất.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{kd_madm.png}
+\caption{mADM trên PETA giấu với và không có chưng cất. Chưng cất tăng mADM 0.017 cho trò ViT-B và 0.014 đến 0.026 cho trò ViT-L. Thêm thầy thứ ba (MetaCLIP2-H) không cải thiện trò ViT-B. Biến thể kd-mix 20 epoch cho trò ViT-L cao nhất.}
+\label{fig:kd}
+\end{figure}
+
+\paragraph{Kết quả.} Hình~\ref{fig:kd} cho thấy chưng cất là đòn bẩy lớn nhất cho Track 2 trong ràng buộc thời gian. Trò ViT-B tăng từ 0.6406 lên 0.6577 khi học từ hai thầy, cao hơn ViT-L không chưng cất (0.6496). Mức tăng tương đối lớn hơn hẳn mức tăng của cùng phương pháp trên chỉ số Avg của Track 1 (0.0038). Điều này phù hợp với lập luận ở mục~\ref{sec:nll}. Thầy cải thiện độ lớn của xác suất nhiều hơn cải thiện vị trí của chúng so với ngưỡng 0.5. Thêm MetaCLIP2-H làm thầy thứ ba không tăng thêm (0.6582 so với 0.6577), dù tổ hợp ba thầy tốt hơn tổ hợp hai thầy. Giới hạn nằm ở sức chứa của trò ViT-B.
+
+\subsection{Không dời ngưỡng ở bước suy luận}
+
+Track 1 cộng một offset vào logit để đặt ngưỡng hiệu dụng. Ở Track 2 không có ngưỡng, và offset làm sai độ lớn của xác suất. Áp offset của Track 1 làm mADM giảm trên val cùng miền, nên gói nộp Track 2 dùng logit nguyên bản.
+
+%=====================================================================
+\section{Thực nghiệm}
+\label{sec:exp}
+
+\subsection{Thiết lập}
+
+Huấn luyện dùng AdamW, learning rate $5\cdot10^{-5}$ ở block cuối với layer decay 0.75, learning rate head gấp 10, weight decay 0.05, batch 64, warmup 0,5 epoch, lịch cosine và EMA 0.9995, giống Track 1. Các lần chạy thẩm định ViT-B dùng 5 epoch trừ khi ghi khác. mADM, mAP, mINP và Rank-k được tính bằng một bản cài đặt độc lập của định nghĩa chính thức. Chúng tôi đã kiểm tra trên toàn bộ val rằng mỗi mã truy vấn ứng với đúng một vector và mọi ảnh có vector nhãn bằng vector truy vấn của nó.
+
+\subsection{Các hàm xếp hạng}
+\label{sec:scorefns}
+
+Bảng~\ref{tab:scores} so các hàm xếp hạng trên cùng logit của ViT-B truy vấn, gallery PETA giấu.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}Xcc@{}}
+\toprule
+Hàm xếp hạng (ViT-B truy vấn, PETA giấu) & mADM & mAP \\
+\midrule
+L1, baseline~\cite{upar} & 0.57 đến 0.58 & \\
+log-likelihood $s_{LL}$ (dùng trong bài nộp) & 0.6261 & 0.2773 \\
+$s_{LL}$ với nhiệt độ $T=1.25$ & 0.6309 & 0.2717 \\
+$s_{LL}$ với nhiệt độ khớp trên val miền nguồn ($T\approx0.8$) & giảm 0.004 đến 0.009 & \\
+$s_{LL}+0.5\log\sum_j e_j\,\ndom_j$ (phân bố Poisson nhị thức) & 0.6290 & 0.2743 \\
+$s_{LL}$ chỉ với mức khớp kỳ vọng ($\beta=1$) & giảm 0.045 & \\
+$s_{LL}$ với sàn xác suất $\epsilon=0.05$ cho mọi thuộc tính & 0.6251 & 0.2631 \\
+$s_{LL}$ với softmax trong từng nhóm loại trừ & 0.6139 & 0.2744 \\
+$s_{LL}$ sau khi đảo ngược làm mềm nhãn & 0.5990 & 0.2826 \\
+\bottomrule
+\end{tabularx}
+\caption{Các hàm xếp hạng trên PETA giấu. Log-likelihood hơn L1 khoảng 0.05. Các biến thể của nó dao động trong khoảng $\pm0.005$, ngoại trừ việc đảo ngược làm mềm nhãn, vốn làm mADM giảm 0.027.}
+\label{tab:scores}
+\end{table}
+
+Ba điểm đáng chú ý. Thứ nhất, nhiệt độ khớp trên val của miền nguồn theo NLL cho $T\approx0.80$ đến 0.85. Nhiệt độ dưới 1 làm xác suất sắc hơn, và nó làm mADM trên PETA giảm 0.004 đến 0.009. Hiệu chỉnh trên miền nguồn đi ngược với điều miền mới cần. Thứ hai, số hạng mức khớp kỳ vọng được tính chính xác theo phân bố Poisson nhị thức. Gọi $m_k=q_k(1-p_k)+(1-q_k)p_k$ là xác suất thuộc tính $k$ lệch và $r_k=m_k/(1-m_k)$. Xác suất lệch đúng $j$ thuộc tính là $P_0\,e_j(r)$, với $e_j$ là đa thức đối xứng sơ cấp bậc $j$, tính được từ các tổng luỹ thừa $\sum_k r_k^m$ bằng đẳng thức Newton. Số hạng này tăng mADM 0.003 ở trọng số 0.5 trên một mô hình, nằm trong nhiễu. Thứ ba, ép ràng buộc nhóm ở bước chấm điểm bằng softmax làm mADM giảm 0.005 đến 0.012 trên 5 mô hình, trong khi cùng ràng buộc đưa vào lúc huấn luyện (mục~\ref{sec:gce}) tăng 0.016.
+
+\subsection{Độ ổn định của các tinh chỉnh chấm điểm giữa các miền}
+\label{sec:robust}
+
+\paragraph{Câu hỏi.} Báo cáo cuộc thi 2024 cho rằng mô hình quá tự tin trên miền mới~\cite{upar24}, và Specker và Beyerer đề xuất hiệu chỉnh và trọng số thuộc tính~\cite{specker21}. Câu hỏi đặt ra là một nhiệt độ $T>1$ hoặc trọng số thuộc tính có cải thiện ổn định trên mọi miền giấu hay không.
+
+\paragraph{Thiết kế.} Chúng tôi áp nhiệt độ $T\in\{1.0,1.1,1.2,1.3,1.4\}$ lên logit của 5 mô hình trên ba miền giấu khác nhau, và trọng số thuộc tính $w_k=2(\mathrm{AUC}_k-0.5)$ hoặc bình phương của nó, với $\mathrm{AUC}_k$ đo trên val của miền nguồn, nhân vào từng số hạng của phương trình~\eqref{eq:ll}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\linewidth]{temperature.png}
+\caption{Thay đổi mADM theo nhiệt độ trên ba miền giấu. Làm mềm xác suất giúp nhẹ trên PETA và Market1501 nhưng làm giảm mạnh trên PA100k, nên không có nhiệt độ nào cải thiện ổn định.}
+\label{fig:temp}
+\end{figure}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Thay đổi so với $s_{LL}$ gốc & giấu PETA & giấu Market1501 & giấu PA100k \\
+\midrule
+nhiệt độ $T=1.1$ & +0.002 & +0.0003 đến +0.0009 & $-0.004$ \\
+nhiệt độ $T=1.3$ & +0.0005 đến +0.004 & +0.0006 đến +0.0014 & $-0.013$ \\
+trọng số $2(\mathrm{AUC}_k-0.5)$ & 0.0000 & +0.0002 & $-0.004$ \\
+trọng số $[2(\mathrm{AUC}_k-0.5)]^2$ & $-0.002$ & $-0.0003$ & $-0.010$ \\
+\bottomrule
+\end{tabular}
+\caption{Thay đổi mADM của các tinh chỉnh chấm điểm trên ba miền giấu. Không tinh chỉnh nào tăng ở cả ba miền.}
+\label{tab:robust}
+\end{table}
+
+\paragraph{Kết quả.} Hình~\ref{fig:temp} và Bảng~\ref{tab:robust} cho thấy không tinh chỉnh nào cải thiện ở cả ba miền. Làm mềm xác suất giúp trên PETA và Market1501 nhưng gây hại rõ trên PA100k. Một giải thích hợp lý là khi giấu PA100k, mô hình chỉ học từ khoảng 18,7 nghìn ảnh và các xác suất của nó vốn đã kém sắc, nên làm mềm thêm làm mất thông tin xếp hạng. Trọng số thuộc tính không giúp ở miền nào. Chúng tôi giữ $s_{LL}$ nguyên bản cho mọi bài nộp.
+
+\begin{ghichu}
+Mọi tham số của bước chấm điểm được chọn trên một miền giấu đều có nguy cơ chỉ khớp miền đó. Chỉ chấp nhận một tham số khi nó cải thiện trên mọi miền giấu. Theo tiêu chí này, không tinh chỉnh chấm điểm nào trong báo cáo được chấp nhận, và toàn bộ cải thiện phải đến từ bước huấn luyện.
+\end{ghichu}
+
+\subsection{Hiệu chỉnh hay độ sắc}
+\label{sec:calib}
+
+Kết quả ở mục~\ref{sec:robust} cho thấy sửa xác suất bằng nhiệt độ không cải thiện ổn định, trong khi chưng cất cải thiện ổn định. Để hiểu sự khác biệt, chúng tôi vẽ biểu đồ độ tin cậy (reliability diagram) cho hai mô hình. Gộp cả 40 thuộc tính, xác suất dự đoán được chia thành 10 khoảng, và với mỗi khoảng ta so xác suất trung bình với tần suất dương thực tế. ECE (expected calibration error, tạm dịch: sai số hiệu chỉnh kỳ vọng) là trung bình có trọng số của độ lệch giữa hai đại lượng này.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{reliability.png}
+\caption{Biểu đồ độ tin cậy gộp 40 thuộc tính trên val miền nguồn (trái) và PETA giấu (phải). Cả hai mô hình đều dự đoán dương nhiều hơn thực tế ở vùng xác suất trung gian, theo cùng một kiểu. ViT-L chưng cất có ECE hơi cao hơn ViT-B, dù mADM cao hơn 0.037.}
+\label{fig:rel}
+\end{figure}
+
+Hình~\ref{fig:rel} cho hai kết quả. Thứ nhất, cả hai mô hình đều đoán dương quá tay ở vùng xác suất trung gian, cả trên miền nguồn lẫn miền giấu. Xác suất dự đoán trung bình là 0.19 trên PETA, trong khi tần suất dương thực tế là 0.16. Độ lệch này là hệ quả có chủ đích của trọng số DeepMAR và làm mềm nhãn, vốn đẩy xác suất của ô âm lên. Thứ hai, ViT-L chưng cất có ECE 0.031, hơi cao hơn 0.027 của ViT-B, dù mADM cao hơn 0.037 và NLL thấp hơn 0.30.
+
+Log-likelihood là một quy tắc chấm điểm đúng đắn, và mọi quy tắc như vậy phân rã được thành một thành phần hiệu chỉnh và một thành phần độ sắc (refinement), đo mức độ xác suất tách các ảnh dương khỏi các ảnh âm~\cite{degroot}. Hình~\ref{fig:rel} cho thấy hai mô hình gần như ngang nhau ở thành phần hiệu chỉnh, nên phần chênh lệch NLL đến từ độ sắc. Điều này giải thích vì sao nhiệt độ không giúp ổn định. Chia logit cho một nhiệt độ là một phép biến đổi đơn điệu và khả nghịch của xác suất. Phép biến đổi như vậy giữ nguyên cách các ảnh được nhóm theo mức xác suất, nên không thay đổi thành phần độ sắc và chỉ thay đổi thành phần hiệu chỉnh, mà thành phần hiệu chỉnh lại không phải nơi các mô hình khác nhau. Các thay đổi ở bước huấn luyện thì tăng độ sắc. Chúng đưa xác suất của ảnh dương lên cao hơn và của ảnh âm xuống thấp hơn một cách đúng đắn.
+
+\subsection{Ảnh nào đứng trước ảnh khớp chính xác}
+\label{sec:confusers}
+
+Với mô hình ViT-L chưng cất trên PETA giấu, chúng tôi lấy các ảnh không khớp được xếp trước ảnh khớp chính xác đầu tiên của mỗi truy vấn, tối đa 10 ảnh cho một truy vấn, tổng cộng 8897 ảnh. Hình~\ref{fig:conf} cho biết các ảnh này lệch truy vấn ở thuộc tính nào và lệch bao nhiêu thuộc tính.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{confusers.png}
+\caption{Trái, 15 thuộc tính thường bị lệch nhất ở các ảnh không khớp xếp trước ảnh khớp đầu tiên. Phải, phân bố số thuộc tính lệch của các ảnh này. Gần một nửa chỉ lệch 1 hoặc 2 thuộc tính và vẫn nhận 0.72 đến 0.86 điểm ndom.}
+\label{fig:conf}
+\end{figure}
+
+Ba nhóm nguyên nhân nổi lên. Nhóm thứ nhất là phụ kiện nhỏ, gồm túi (24\% số ảnh), kính (17\%), kính râm và ba lô. Ở độ phân giải 256×128 và với ảnh PETA gốc thường nhỏ hơn nữa, những vật này chỉ chiếm vài patch. Nhóm thứ hai là các màu trung tính, gồm quần xám (19\%), áo trắng (16\%), áo xám và áo đen. Ranh giới giữa xám, trắng và đen phụ thuộc vào ánh sáng và vào quy ước của người gán nhãn, nên đây cũng là nhóm có lỗi ngưỡng lớn nhất ở Track 1. Nhóm thứ ba là các thuộc tính có ranh giới chủ quan, gồm độ tuổi và độ dài tóc. Trung bình mỗi ảnh lệch 3.07 thuộc tính. 43\% số ảnh chỉ lệch 1 hoặc 2 thuộc tính, và đây chính là các ảnh mang lại phần lớn giá trị mADM ở những truy vấn mà ảnh khớp chính xác đứng xa đầu danh sách.
+
+\subsection{Biến thể mô hình và tổ hợp}
+
+Bảng~\ref{tab:var} liệt kê các biến thể mô hình đã đo trên PETA giấu với $s_{LL}$. Ngoài kết luận về NLL ở mục~\ref{sec:nll}, bảng cho thấy head tuyến tính có AUC cao hơn head truy vấn ở ViT-B (0.9076 so với 0.9007 đến 0.9040) và mADM cao hơn 0.005. Head truy vấn được giữ trong bài nộp vì nó là nền của biến thể group CE và chưng cất tốt nhất.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Biến thể (PETA giấu) & AUC & NLL / ảnh & mADM \\
+\midrule
+ViT-L 256×128, head tuyến tính & 0.9126 & 6.569 & 0.6697 \\
+ViT-B truy vấn + group CE & 0.9048 & 6.771 & 0.6424 \\
+ViT-B truy vấn, 3 epoch & 0.9041 & 7.102 & 0.6350 \\
+ViT-L 160×80, head tuyến tính & 0.8960 & 6.823 & 0.6335 \\
+ViT-B tuyến tính, chưng cất logit từ ViT-L & 0.9028 & 6.861 & 0.6334 \\
+ViT-B tuyến tính & 0.9076 & 6.993 & 0.6313 \\
+ViT-B truy vấn + cân bằng trắng & 0.9001 & 6.985 & 0.6294 \\
+PE-Core, head tuyến tính & 0.8950 & 6.916 & 0.6276 \\
+ViT-B truy vấn 2 tầng & 0.9020 & 7.013 & 0.6270 \\
+ViT-B truy vấn, lần 1 và lần 2 & 0.9007 và 0.9040 & 6.976 và 6.998 & 0.6261 và 0.6254 \\
+ViT-B head kép & 0.9041 & 7.037 & 0.6260 \\
+ViT-B truy vấn, đọc 4 tầng token & 0.8988 & 6.997 & 0.6242 \\
+ViT-B truy vấn, cân bằng bộ dữ liệu & 0.9049 & 7.008 & 0.6214 \\
+ViT-B logit adjustment & 0.9019 & 31.86 & 0.5396 \\
+\bottomrule
+\end{tabular}
+\caption{Biến thể mô hình trên PETA giấu, xếp theo mADM. Logit adjustment có AUC bình thường nhưng NLL tăng gấp 4,5 lần và mADM sụp, minh hoạ trực tiếp việc dời độ lớn của logit làm hỏng xếp hạng log-likelihood.}
+\label{tab:var}
+\end{table}
+
+Logit adjustment~\cite{logitadj} là ví dụ cực đoan. Phương pháp này dời logit theo tần suất nhãn để tối ưu độ chính xác cân bằng. AUC của nó bình thường (0.9019), nhưng NLL tăng từ khoảng 7 lên 31,86 và mADM giảm 0.087. Mọi thay đổi chủ yếu dời độ lớn của logit, dù có ích ở Track 1, đều có hại ở Track 2.
+
+Tổ hợp logit của các mô hình có lỗi ít tương quan làm giảm phương sai của log-odds, nên cải thiện cả AUC lẫn NLL (Bảng~\ref{tab:ensb}). Tổ hợp ViT-L 256 với ViT-B group CE đạt 0.6783, nhưng tổ hợp tốn thời gian CPU của cả hai mô hình. Chưng cất (mục~\ref{sec:kd}) là cách đưa một phần lợi ích này vào một mô hình ViT-B duy nhất.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Tổ hợp logit (PETA giấu) & AUC & mADM & Avg Track 1 \\
+\midrule
+ViT-B truy vấn & 0.9007 & 0.6261 & 0.7961 \\
+ViT-B truy vấn, hai lần chạy & 0.9044 & 0.6315 & 0.7965 \\
+ViT-B truy vấn + ViT-B tuyến tính & 0.9099 & 0.6389 & 0.7956 \\
+ViT-B group CE + ViT-B tuyến tính & 0.9108 & 0.6465 & 0.7945 \\
+ViT-L 160 tuyến tính + ViT-B group CE & 0.9090 & 0.6601 & \\
+ViT-L 256 tuyến tính + ViT-B group CE & 0.9173 & 0.6783 & 0.8028 \\
+\bottomrule
+\end{tabular}
+\caption{Tổ hợp logit trên PETA giấu. Tổ hợp tăng mADM 0.005 đến 0.052 trong khi Avg của Track 1 gần như không đổi, thêm một bằng chứng rằng hai track đo hai tính chất khác nhau của xác suất.}
+\label{tab:ensb}
+\end{table}
+
+\subsection{Phân rã NLL theo nhóm thuộc tính}
+\label{sec:nllgroups}
+
+NLL trên một ảnh là tổng của 40 thành phần, nên có thể phân rã để biết nhóm thuộc tính nào làm hỏng thứ hạng nhiều nhất trên miền mới. Hình~\ref{fig:nllg} so ba mô hình trên PETA giấu.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{nll_groups.png}
+\caption{NLL trung bình trên một ảnh, phân rã theo nhóm thuộc tính, trên PETA giấu. Màu áo, màu quần và phụ kiện chiếm khoảng hai phần ba tổng NLL. Group CE giảm NLL chủ yếu ở các nhóm loại trừ (tuổi, tóc, hai nhóm màu). Mô hình ViT-L chưng cất giảm thêm ở các thuộc tính nhị phân như giới tính, áo ngắn tay, kiểu quần và phụ kiện.}
+\label{fig:nllg}
+\end{figure}
+
+Ba quan sát rút ra. Thứ nhất, hai nhóm màu và nhóm phụ kiện chiếm khoảng 4,6 trên 7,0 nats của mô hình ViT-B, nên mọi cải thiện có ý nghĩa cho Track 2 phải đi qua ba nhóm này. Đây cũng là các nhóm có lỗi ngưỡng lớn nhất ở Track 1, vì quy ước gán nhãn màu khác nhau giữa các bộ dữ liệu. Thứ hai, group CE giảm NLL đúng ở các nhóm có cấu trúc loại trừ (tuổi giảm 0.06, tóc 0.05, mỗi nhóm màu 0.07), trong khi gần như không đổi ở giới tính và áo ngắn tay vốn là thuộc tính nhị phân đơn. Mẫu hình này khớp với cơ chế ở mục~\ref{sec:gce}. Thứ ba, mô hình ViT-L chưng cất giảm NLL ở các thuộc tính nhị phân và phụ kiện nhiều hơn ở các nhóm màu. So sánh này gộp hai thay đổi là backbone lớn hơn và chưng cất, nên chúng tôi chỉ coi nó là gợi ý rằng group CE và chưng cất bổ sung cho nhau. Ở cặp lần chạy dùng cho hình này, group CE giảm tổng NLL từ 6.99 xuống 6.72 và tăng mADM từ 0.6270 lên 0.6406. Mức tăng 0.0136 nhỏ hơn mức 0.0164 ở cặp lần chạy trước, và hai giá trị cho một khoảng ước lượng hợp lý của hiệu ứng.
+
+\subsection{Độ khó của truy vấn}
+\label{sec:difficulty}
+
+Hình~\ref{fig:diff} phân tích điểm của từng truy vấn với mô hình ViT-L chưng cất trên 1763 truy vấn của PETA giấu.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{query_difficulty.png}
+\caption{Trái, ADM trung bình theo số ảnh khớp chính xác của truy vấn. Phải, phân bố thứ hạng của ảnh khớp đầu tiên. ADM gần như không đổi theo số ảnh khớp và vẫn khoảng 0.65 dù 16\% truy vấn có ảnh khớp đầu tiên nằm sau hạng 100. Phần lớn giá trị của mADM vì vậy đến từ mức khớp gần của các ảnh ở đầu danh sách.}
+\label{fig:diff}
+\end{figure}
+
+Hai kết luận rút ra. Thứ nhất, ADM gần như không phụ thuộc vào số ảnh khớp (0.63 đến 0.69 ở mọi nhóm), dù 61\% truy vấn chỉ có đúng một ảnh khớp. Thứ hai, ảnh khớp chính xác đầu tiên đứng hạng 1 ở 28\% truy vấn và nằm sau hạng 100 ở 16\% truy vấn, nhưng mADM của mô hình vẫn là 0.6635 trong khi mAP chỉ là 0.3175. Khoảng cách giữa hai chỉ số cho thấy phần lớn giá trị của mADM đến từ các ảnh khớp gần ở đầu danh sách, đúng như cách viết $\mathrm{ADM}=\frac1R\sum_m D(r_m)$ ở mục~\ref{sec:metric} gợi ý.
+
+Kết quả này chưa giải thích được vì sao xếp hạng theo mức khớp kỳ vọng (L1, hoặc kỳ vọng ndom tính chính xác ở Bảng~\ref{tab:scores}) thua log-likelihood rõ rệt, dù mADM chủ yếu thưởng mức khớp gần. Chúng tôi đưa ra một giả thuyết, chưa được kiểm chứng trực tiếp. Mức khớp kỳ vọng là tổng tuyến tính của 40 xác suất lệch. Nó cho cùng một điểm cho một ảnh có nhiều thuộc tính không chắc chắn (xác suất gần 0.5) và một ảnh chắc chắn đúng ở hầu hết thuộc tính nhưng chắc chắn sai ở vài thuộc tính. Log-likelihood nhân các xác suất thành phần với nhau, nên một ảnh chỉ được điểm cao khi mô hình chắc chắn ở mọi thuộc tính. Nếu trên miền mới các xác suất gần 0.5 thường đi kèm với ảnh mà mô hình không nhận ra đúng vùng cơ thể, thì những ảnh đó có mức khớp thật thấp hơn mức mà xác suất của chúng gợi ý, và log-likelihood tránh được việc xếp chúng lên đầu.
+
+%=====================================================================
+\section{Kết quả trên tập chấm ẩn}
+\label{sec:lb}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.66\linewidth]{leaderboard.png}
+\caption{mADM trên tập chấm ẩn của các bài nộp có ghi nhận kết quả. Bài v4 bị cơ chế dự phòng thời gian làm hỏng. Hai bước chưng cất (v5, v6) mỗi bước tăng khoảng 0.005 đến 0.007.}
+\label{fig:lb}
+\end{figure}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}llXc@{}}
+\toprule
+Bài & Mô hình & Thành phần chính & Tập chấm \\
+\midrule
+v1 & ViT-L 176, truy vấn & mô hình Track 1, $s_{LL}$ & không ghi nhận \\
+v2 & ViT-B, truy vấn & train+val & không ghi nhận \\
+v3b & ViT-B, truy vấn & + group CE, train+val & 0.6247 \\
+v4 & ViT-L 176, truy vấn & chưng cất hai thầy, có dự phòng thời gian & 0.2375 \\
+v5 & ViT-B, truy vấn & group CE + chưng cất hai thầy, 10 epoch & 0.6315 \\
+v6 & ViT-B, truy vấn & group CE + chưng cất kd-mix, 20 epoch, không dự phòng & 0.6365 \\
+\bottomrule
+\end{tabularx}
+\caption{Các bài nộp Track 2. Bài v5 đứng đầu bảng xếp hạng với khoảng cách 0.0006 so với đội thứ hai. Bài v6 nới rộng khoảng cách.}
+\label{tab:lb}
+\end{table}
+
+\paragraph{Mức tăng chuyển được.} Từ v3b sang v5, chưng cất hai thầy tăng 0.0068 trên tập chấm. Từ v5 sang v6, function matching với ảnh trộn và lịch dài hơn tăng thêm 0.0050. Trên giao thức thẩm định với trò ViT-L, function matching tăng 0.0058 so với chưng cất thường (0.6751 so với 0.6693). Hai con số gần nhau, cho thấy giao thức thẩm định dự báo đúng cả hướng lẫn độ lớn của thay đổi này.
+
+\paragraph{Thất bại do cơ chế dự phòng.} Bài v4 dùng ViT-L 176 chưng cất. Trên một lần chạy máy chấm chậm, ViT-L mất 176 đến 190 ms một ảnh thay vì khoảng 103 ms như lần chạy trước, và chương trình vượt ngân sách thời gian nội bộ. Cơ chế dự phòng khi đó gán xác suất trung bình của tập train cho mọi ảnh còn lại. Các ảnh này nhận cùng một điểm cho mọi truy vấn, tạo thành một khối lớn điểm bằng nhau, và mADM rơi xuống 0.2375. Bản sửa đầu tiên xếp mọi ảnh quá giờ xuống cuối danh sách. Bản sửa cuối cùng bỏ hẳn cơ chế dự phòng, vì một bài thất bại giữ nguyên điểm cũ trên bảng xếp hạng, còn một bài dự phòng thay điểm tốt bằng điểm xấu. Mọi bài nộp sau đó dùng ViT-B, vốn chạy kịp ở cả những lần máy chậm nhất đã quan sát.
+
+%=====================================================================
+\section{Thảo luận}
+\label{sec:disc}
+
+\paragraph{Vì sao các đội trước khó vượt baseline.} Kết quả của chúng tôi đưa ra một giải thích cụ thể cho nhận định của ban tổ chức~\cite{upar24}. Các mô hình nhận dạng thuộc tính mạnh thường được tối ưu cho chỉ số ở ngưỡng cố định, bằng các kỹ thuật dời ngưỡng như logit adjustment, trọng số mạnh cho thuộc tính hiếm hoặc khớp ngưỡng. Các kỹ thuật này giữ nguyên AUC nhưng làm hỏng độ lớn của xác suất. Với hàm xếp hạng L1 hoặc log-likelihood, độ lớn đó chính là thứ quyết định thứ hạng. Bảng~\ref{tab:var} cho một ví dụ trực tiếp, khi logit adjustment giữ AUC nhưng làm mADM giảm 0.087.
+
+\paragraph{Cùng một kỹ thuật, hai kết quả trái ngược.} Hai track dùng chung dữ liệu, chung mô hình và chung ràng buộc tính toán, nên là một cặp đối chứng tự nhiên. Bảng~\ref{tab:t1t2} đặt cạnh nhau tác động của cùng một kỹ thuật lên hai track. Offset khớp trên miền nguồn có ích ở Track 1 và có hại ở Track 2. Logit adjustment có hại ở cả hai track. Ở Track 1, nó dời logit thêm một lần trên nền offset nên ngưỡng hiệu dụng bị dời quá xa. Ở Track 2, nó làm hỏng độ lớn của xác suất. Các kỹ thuật làm xác suất sắc hơn mà không dời ngưỡng (group CE, tổ hợp, chưng cất) có ích nhiều hơn ở Track 2. Bảng này cũng giải thích vì sao chọn mô hình Track 2 bằng tiêu chí của Track 1 dẫn tới chọn sai.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}Xcc@{}}
+\toprule
+Kỹ thuật (PETA giấu) & Track 1, thay đổi Avg & Track 2, thay đổi mADM \\
+\midrule
+Offset khớp trên miền nguồn × 0.6 & +0.007 & giảm trên val cùng miền \\
+Logit adjustment & $-0.122$ (cộng thêm offset × 0.6) & $-0.087$ \\
+Group CE (ViT-B) & $-0.004$ & +0.014 đến +0.016 \\
+Tổ hợp hai mô hình ViT-B & $-0.002$ đến +0.0004 & +0.005 đến +0.020 \\
+Chưng cất hai thầy (trò ViT-B) & +0.004 & +0.017 \\
+Head tuyến tính thay head truy vấn (ViT-B) & $-0.005$ & +0.005 \\
+\bottomrule
+\end{tabularx}
+\caption{Tác động của cùng một kỹ thuật lên hai track. Offset giúp Track 1 và hại Track 2. Kỹ thuật tăng độ sắc của xác suất giúp Track 2 nhiều hơn hẳn Track 1.}
+\label{tab:t1t2}
+\end{table}
+
+\paragraph{Thứ chuyển được sang miền mới.} Các thay đổi ở bước huấn luyện (làm mềm nhãn, group CE, chưng cất) cải thiện ổn định trên mọi miền giấu đã đo. Các tham số ở bước chấm điểm (nhiệt độ, trọng số) thì không. Một cách giải thích là thay đổi ở bước huấn luyện tác động lên cách mô hình biểu diễn độ bất định cho mọi ảnh, còn tham số chấm điểm khớp một mức độ bất định cụ thể của một miền.
+
+\paragraph{Ràng buộc của luật thi.}
+\label{sec:rules}
+Tập truy vấn của tập chấm được tạo từ chính các vector nhãn của gallery. Vì vậy mọi thống kê tính chéo nhiều truy vấn, như thuộc tính nào luôn bằng 0 hoặc tần suất đa màu, là thống kê trên nhãn của tập chấm. Trên val, hai kỹ thuật dạng này tăng mADM 0.002 đến 0.005 và mAP 0.01 đến 0.035. Một ví dụ là bỏ 6 thuộc tính màu mà Market1501 không bao giờ gán nhãn khỏi hàm chấm điểm. Chúng tôi không dùng các kỹ thuật này vì chúng đi ngược tinh thần của luật cấm dùng thông tin của tập chấm, và chấm từng truy vấn độc lập luôn hợp lệ. Lý do tương tự áp dụng cho các phương pháp xếp hạng lại dựa trên thống kê toàn gallery.
+
+\paragraph{Giới hạn.} Phần lớn số liệu dựa trên PETA giấu. Sai số chuẩn ghép cặp được ước lượng bằng bootstrap trên truy vấn, không tính nhiễu giữa các lần huấn luyện. Bài nộp v6 không được đo trực tiếp trên giao thức thẩm định với trò ViT-B, mà dựa trên kết quả của cùng phương pháp với trò ViT-L. Giải thích về ngoại lệ 3 epoch trong Hình~\ref{fig:aucnll} còn bỏ ngỏ.
+
+%=====================================================================
+\section{Kết luận}
+
+Chúng tôi trình bày một hệ thống truy xuất người theo thuộc tính đạt 0.6365 mADM trên tập chấm ẩn của UPAR Challenge 2027 Track 2. Hệ thống chấm điểm bằng log-likelihood của cả vector thuộc tính, và mọi cải thiện sau đó đến từ việc làm xác suất trên miền mới tốt hơn ở bước huấn luyện, qua làm mềm nhãn, entropy chéo theo nhóm và chưng cất từ hai thầy. Phân tích cho thấy với hàm xếp hạng này, NLL trên ảnh giấu là tiêu chí chọn mô hình đúng, AUC và các chỉ số ở ngưỡng cố định thì không. Các tinh chỉnh ở bước chấm điểm, được đề xuất trong tài liệu trước, không ổn định giữa các miền và không được dùng. Bài học vận hành giống Track 1. Bài nộp phải chạy kịp ở lần máy chấm chậm nhất, và cơ chế dự phòng trả về kết quả kém có hại hơn một lần chạy thất bại.
+
+%=====================================================================
+\begin{thebibliography}{99}\small
+\bibitem{upar} A.~Specker, M.~Cormier, J.~Beyerer. UPAR: Unified pedestrian attribute recognition and person retrieval. \textit{WACV}, 2023.
+\bibitem{upar23} M.~Cormier, A.~Specker, J.~C.~S.~Jacques Junior và cộng sự. UPAR challenge: Pedestrian attribute recognition and attribute-based person retrieval, dataset, design, and results. \textit{WACV Workshops}, 2023.
+\bibitem{upar24} M.~Cormier, A.~Specker, J.~C.~S.~Jacques Junior và cộng sự. UPAR challenge 2024: Pedestrian attribute recognition and attribute-based person retrieval, dataset, design, and results. \textit{WACV Workshops}, 2024.
+\bibitem{specker21} A.~Specker, J.~Beyerer. Improving attribute-based person retrieval by using a calibrated, weighted, and distribution-based distance metric. \textit{ICIP}, 2021.
+\bibitem{specker23} A.~Specker, J.~Beyerer. Balanced pedestrian attribute recognition for improved attribute-based person retrieval. \textit{ICPRS}, 2023.
+\bibitem{pa100k} X.~Liu, H.~Zhao, M.~Tian và cộng sự. HydraPlus-Net: Attentive deep features for pedestrian analysis. \textit{ICCV}, 2017.
+\bibitem{market} L.~Zheng, L.~Shen, L.~Tian và cộng sự. Scalable person re-identification: A benchmark. \textit{ICCV}, 2015.
+\bibitem{peta} Y.~Deng, P.~Luo, C.~C.~Loy, X.~Tang. Pedestrian attribute recognition at far distance. \textit{ACM Multimedia}, 2014.
+\bibitem{cuhkpedes} S.~Li, T.~Xiao, H.~Li và cộng sự. Person search with natural language description. \textit{CVPR}, 2017.
+\bibitem{guo} C.~Guo, G.~Pleiss, Y.~Sun, K.~Q.~Weinberger. On calibration of modern neural networks. \textit{ICML}, 2017.
+\bibitem{ovadia} Y.~Ovadia, E.~Fertig, J.~Ren và cộng sự. Can you trust your model's uncertainty? Evaluating predictive uncertainty under dataset shift. \textit{NeurIPS}, 2019.
+\bibitem{gneiting} T.~Gneiting, A.~E.~Raftery. Strictly proper scoring rules, prediction, and estimation. \textit{Journal of the American Statistical Association}, 2007.
+\bibitem{prp} S.~E.~Robertson. The probability ranking principle in IR. \textit{Journal of Documentation}, 1977.
+\bibitem{degroot} M.~H.~DeGroot, S.~E.~Fienberg. The comparison and evaluation of forecasters. \textit{Journal of the Royal Statistical Society, Series D}, 1983.
+\bibitem{kreciprocal} Z.~Zhong, L.~Zheng, D.~Cao, S.~Li. Re-ranking person re-identification with k-reciprocal encoding. \textit{CVPR}, 2017.
+\bibitem{hinton} G.~Hinton, O.~Vinyals, J.~Dean. Distilling the knowledge in a neural network. \textit{arXiv:1503.02531}, 2015.
+\bibitem{patient} L.~Beyer, X.~Zhai, A.~Royer và cộng sự. Knowledge distillation: A good teacher is patient and consistent. \textit{CVPR}, 2022.
+\bibitem{dinov3} O.~Siméoni, H.~V.~Vo, M.~Seitzer và cộng sự. DINOv3. \textit{arXiv:2508.10104}, 2025.
+\bibitem{clip} A.~Radford, J.~W.~Kim, C.~Hallacy và cộng sự. Learning transferable visual models from natural language supervision. \textit{ICML}, 2021.
+\bibitem{logitadj} A.~K.~Menon, S.~Jayasumana, A.~S.~Rawat và cộng sự. Long-tail learning via logit adjustment. \textit{ICLR}, 2021.
+\end{thebibliography}
+
+\appendix
+\section{Chi tiết gói nộp}
+
+{\sloppy Gói nộp gồm \texttt{run.py}, trọng số mô hình và mã nguồn tối thiểu của \texttt{timm} và \texttt{upar.models}.\par}
+Hàm \texttt{rank\_gallery} tính xác suất cho mọi ảnh gallery theo batch, kẹp xác suất trong $[10^{-4},1-10^{-4}]$, rồi tính ma trận điểm theo phương trình~\eqref{eq:ll} bằng một phép nhân ma trận float64. Ma trận được chuyển sang float32 và trả về dưới khoá \texttt{distances} với giá trị $-S$, đúng khoá mà chương trình mẫu của ban tổ chức dùng, trong đó giá trị nhỏ hơn ứng với mức khớp cao hơn. Một khoá sai sẽ đảo ngược toàn bộ thứ hạng, nên khoá này được đối chiếu với chương trình mẫu. Khi điểm bằng nhau, chương trình chấm giữ thứ tự gallery.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Thành phần & Giá trị (bài nộp v6) \\
+\midrule
+Backbone & \texttt{vit\_base\_patch16\_dinov3.lvd1689m}, 256×128 \\
+Head & truy vấn, 1 tầng \\
+Loss nhãn & BCE, làm mềm 0.05, trọng số DeepMAR, + 0.5 × group CE \\
+Chưng cất & thầy DINOv3-L 176×96 và CLIP-L/14 168×84 (train+val), $\alpha=0.8$, $T=1$ \\
+Function matching & xác suất batch trộn 0.5, mixup Beta(0.8, 0.8) hoặc CutMix Beta(1, 1), 20 epoch \\
+Dữ liệu & train + val của cả ba bộ \\
+Suy luận & logit nguyên bản, không offset, không nhiệt độ, không dự phòng thời gian \\
+\bottomrule
+\end{tabularx}
+\caption{Cấu hình của bài nộp Track 2 tốt nhất.}
+\end{table}
+
+
+\section{Thuật toán xếp hạng}
+
+Quy trình của hàm \texttt{rank\_gallery} gồm các bước sau.
+
+\begin{enumerate}[leftmargin=1.6em]
+\item Với mỗi batch ảnh gallery, đọc ảnh, đổi kích thước về 256×128, chuẩn hoá theo ImageNet, chạy mô hình và lấy 40 logit $z_g$.
+\item Tính $p_g=\sigma(z_g)$ và kẹp vào $[10^{-4},1-10^{-4}]$.
+\item Tính hai ma trận $L^{+}=\log P$ và $L^{-}=\log(1-P)$, mỗi ma trận có kích thước $G\times40$.
+\item Tính $S=Q\,(L^{+}-L^{-})^{\top}+\mathbf{1}\,(L^{-}\mathbf{1})^{\top}$, kích thước $|Q|\times G$. Mỗi phần tử $S_{qg}$ là $s_{LL}(q,g)$ theo phương trình~\eqref{eq:ll}.
+\item Thay giá trị không hữu hạn bằng $\pm10^6$, chuyển sang float32, trả về \texttt{distances} $=-S$.
+\end{enumerate}
+
+Số hạng Poisson nhị thức ở Bảng~\ref{tab:scores} được tính như sau. Với mỗi cặp truy vấn và ảnh, đặt $m_k=q_k(1-p_k)+(1-q_k)p_k$ và $r_k=m_k/(1-m_k)$. Tổng luỹ thừa $P_t=\sum_k r_k^t$ với $t=1,\dots,4$ là bốn phép nhân ma trận giữa $Q$ và các luỹ thừa của tỉ số odds. Đa thức đối xứng sơ cấp được tính bằng đẳng thức Newton, $e_1=P_1$, $e_2=(e_1P_1-P_2)/2$, $e_3=(e_2P_1-e_1P_2+P_3)/3$, $e_4=(e_3P_1-e_2P_2+e_1P_3-P_4)/4$. Xác suất lệch đúng $j$ thuộc tính là $P_0\,e_j$ với $P_0=\exp(s_{LL})$. Kỳ vọng ndom bị cắt ở $j\le4$, vì $\ndom(j)$ đã dưới 0.45 từ $j=4$.
+
+\end{document}
