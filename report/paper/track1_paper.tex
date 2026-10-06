@@ -140,7 +140,7 @@ Hai chỉ số kéo quyết định về hai phía ngược nhau. Độ chính x
 \section{Mô hình biến một ảnh thành 40 quyết định như thế nào}
 \label{sec:model}
 
-Mục này mô tả hệ thống nộp bài, theo đúng thứ tự dữ liệu đi qua nó (Hình~\ref{fig:pipeline}). Mục đích là để người đọc biết các con số ở các mục sau sinh ra ở đâu.
+Mục này mô tả hệ thống nộp bài theo đúng thứ tự dữ liệu đi qua nó (Hình~\ref{fig:pipeline}). Với mỗi thành phần, chúng ta trả lời bốn câu hỏi theo thứ tự. Thành phần đó phải giải quyết vấn đề gì. Cách làm đơn giản nhất hỏng ở đâu. Lời giải cần thoả điều kiện gì. Lời giải được chọn hoạt động thế nào, và đã được so với những phương án nào.
 
 \begin{figure}[H]
 \centering
@@ -165,20 +165,143 @@ Mục này mô tả hệ thống nộp bài, theo đúng thứ tự dữ liệu 
 \draw[arr, dashed] (lg.south) |- ($(loss.north)+(0,3mm)$) -- (loss.north);
 \node[font=\sffamily\scriptsize\itshape, text=black!55, anchor=west] at ($(t2.south west)+(0,-3mm)$) {chỉ dùng khi huấn luyện};
 \end{tikzpicture}
-\caption{Hệ thống nộp bài cuối. Hàng trên là đường suy luận chạy trên máy chấm. Hàng dưới chỉ tồn tại khi huấn luyện. Mục~\ref{sec:rank} giải thích bộ trích đặc trưng và hai mô hình thầy, mục~\ref{sec:thr} giải thích bước dời ngưỡng.}
+\caption{Hệ thống nộp bài cuối. Hàng trên là đường suy luận chạy trên máy chấm, gồm bốn bước được giải thích lần lượt trong mục này. Hàng dưới chỉ tồn tại khi huấn luyện và được giải thích ở mục~\ref{sec:teachers}.}
 \label{fig:pipeline}
 \end{figure}
 
-\paragraph{Bộ trích đặc trưng.} Ảnh được đưa về 176×96 pixel rồi chia thành các ô vuông 16×16 pixel, gọi là \textbf{patch}. Ảnh 176×96 cho lưới 11×6 gồm 66 patch. Mỗi patch được biến thành một vector số, gọi là \textbf{token}. Bộ trích đặc trưng là một Vision Transformer (ViT) cỡ L, khởi tạo từ DINOv3~\cite{dinov3}, một mô hình đã được tiền huấn luyện tự giám sát trên khoảng 1,7 tỉ ảnh. Nó cho phép mỗi token trao đổi thông tin với các token khác, nên token đầu ra của một patch mang thông tin về cả vùng xung quanh. Ngoài 66 token ảnh còn có token CLS, một token đặc biệt tóm tắt toàn ảnh.
+\subsection{Bộ trích đặc trưng}
+\label{sec:backbone}
 
-\paragraph{Head truy vấn.} Phần đầu ra, gọi là \textbf{head}, biến các token thành 40 con số. Với head truy vấn, mỗi thuộc tính $k$ có một vector truy vấn học được $q_k$. Vector này so mình với từng token ảnh, gán trọng số cao cho các token giống nó, rồi lấy tổng có trọng số của các token. Cơ chế này gọi là cross-attention. Nhờ đó, truy vấn của thuộc tính mũ có thể đọc chủ yếu các token ở vùng đầu, còn truy vấn của màu quần đọc các token ở vùng chân. Mục~\ref{sec:xai} kiểm tra trực tiếp điều này.
+\paragraph{Vấn đề.} Ảnh đầu vào là một lưới điểm ảnh. Từ đó mô hình phải rút ra các đặc điểm như màu áo, hình dạng của váy hay sự có mặt của một chiếc ba lô. Phần mạng làm việc này gọi là \textbf{bộ trích đặc trưng} (backbone). Mọi thông tin mà các bước sau dùng tới đều phải có sẵn trong đầu ra của nó. Mục~\ref{sec:measure} sẽ cho thấy trên camera mới, khả năng xếp hạng của hệ thống bị giới hạn chủ yếu bởi chính bước này.
 
-\paragraph{Logit, sigmoid và ngưỡng.} Head trả về cho mỗi thuộc tính một số thực $z_k$, gọi là \textbf{logit}. Logit có thể âm hoặc dương. Hàm sigmoid $\sigma(z)=1/(1+e^{-z})$ đổi logit thành xác suất trong khoảng 0 đến 1. Logit bằng 0 ứng với xác suất 0.5, logit $-3$ ứng với khoảng 0.05, logit $+3$ ứng với khoảng 0.95. Vì sigmoid đồng biến, cắt xác suất ở 0.5 tương đương cắt logit ở 0. Trong các hình của báo cáo, chúng tôi vẽ theo logit vì nó trải đều hơn xác suất.
+\paragraph{Vì sao không huấn luyện từ đầu.} Ba bộ dữ liệu chỉ có khoảng 98 nghìn ảnh train, chụp từ một số ít hệ thống camera. Một mạng học từ đầu trên lượng ảnh này sẽ học cả những chi tiết riêng của các camera đó, như ánh màu hay độ nhoè, và dễ hỏng khi gặp camera khác. Cách phổ biến là bắt đầu từ một mạng đã được \textbf{tiền huấn luyện} trên hàng trăm triệu đến hàng tỉ ảnh đa dạng, rồi \textbf{tinh chỉnh} (fine-tune) nó trên dữ liệu của bài toán.
 
-\paragraph{Hàm mất mát.} Khi huấn luyện, mỗi logit được so với nhãn bằng entropy chéo nhị phân. Hai điều chỉnh được thêm vào. Thứ nhất, các ô dương của thuộc tính hiếm được nhân trọng số lớn hơn, theo cách của DeepMAR~\cite{deepmar}. Thứ hai, nhãn được làm mềm, nhãn 1 thành 0.975 và nhãn 0 thành 0.025. Cả hai điều chỉnh đều làm logit tối ưu bị dời đi một lượng biết trước, và mục~\ref{sec:thr} sẽ dùng chính lượng dời này.
+\paragraph{Yêu cầu.} Bộ trích đặc trưng cần ba tính chất. Nó phải cho đặc trưng tốt ở mức từng vùng ảnh, vì nhiều thuộc tính như kính hay mũ chỉ chiếm vài phần trăm diện tích ảnh. Nó phải giữ được chất lượng khi ảnh nhỏ và mờ. Nó phải chạy kịp trên máy chấm chỉ có CPU, khoảng 120 ms một ảnh (Phụ lục~\ref{app:cpu}).
+
+\paragraph{Cơ chế của ViT.} Chúng tôi dùng Vision Transformer (ViT). ViT chia ảnh thành các ô vuông 16×16 pixel, gọi là \textbf{patch}. Ảnh 176×96 cho lưới 11×6 gồm 66 patch. Mỗi patch được biến thành một vector 1024 số, gọi là \textbf{token}. Ngoài 66 token ảnh, ViT thêm một token đặc biệt tên CLS để tóm tắt toàn ảnh, và DINOv3 thêm bốn token phụ (register) chỉ dùng bên trong mạng. Các token đi qua 24 tầng, gọi là \textbf{block}. Trong mỗi block, mỗi token so mình với mọi token khác rồi lấy thêm thông tin từ những token liên quan. Sau 24 block, token của một patch mang thông tin về cả patch đó lẫn ngữ cảnh xung quanh. Ví dụ, token của patch chứa quai đeo có thể mang thông tin rằng quai này nối với một chiếc ba lô ở sau lưng.
+
+\paragraph{Vì sao chọn DINOv3.} DINOv3~\cite{dinov3} được tiền huấn luyện tự giám sát trên khoảng 1,7 tỉ ảnh, với mục tiêu học đặc trưng tốt ở cả mức toàn ảnh lẫn mức từng patch. Thuộc tính thứ hai khớp với yêu cầu đầu tiên ở trên. Để chọn có căn cứ, chúng tôi tinh chỉnh mười bộ trích đặc trưng cỡ L với cùng công thức và cùng head, rồi đo trên PETA giấu (Bảng~\ref{tab:encoders}). Tiêu chí chính là AUC, đại lượng đo khả năng xếp hạng không phụ thuộc ngưỡng, được giải thích kỹ ở mục~\ref{sec:two}.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Bộ trích đặc trưng & Kiểu tiền huấn luyện & Kích thước ảnh & AUC & Avg, quy tắc $\tau$ \\
+\midrule
+DINOv3-L & tự giám sát, chỉ ảnh & 176×96 & 0.9127 & 0.8079 \\
+MetaCLIP2-H (cỡ H, lớn hơn) & cặp ảnh và văn bản & 168×84 & 0.9136 & 0.8059 \\
+CLIP-L & cặp ảnh và văn bản & 168×84 & 0.9086 & 0.8085 \\
+SigLIP2-So400m & cặp ảnh và văn bản & 168×84 & 0.9107 & 0.7992 \\
+ConvNeXt-L (bản DINOv3) & tự giám sát, mạng tích chập & 256×128 & 0.9081 & 0.7980 \\
+SigLIP2-L & cặp ảnh và văn bản & 176×96 & 0.9076 & 0.7933 \\
+PE-Core-L & cặp ảnh và văn bản & 168×84 & 0.9072 & 0.7976 \\
+MetaCLIP2-L & cặp ảnh và văn bản & 168×84 & 0.9032 & 0.7930 \\
+AIMv2-L & tự hồi quy ảnh và văn bản & 168×84 & 0.9001 & 0.7800 \\
+EVA02-L & kết hợp & 168×84 & 0.8849 & 0.7691 \\
+\bottomrule
+\end{tabular}
+\caption{Mười bộ trích đặc trưng cỡ L tinh chỉnh với cùng công thức (head truy vấn, 3 epoch, đóng băng 8 block đầu), đo trên PETA giấu. DINOv3-L có AUC cao nhất trong nhóm cỡ L. MetaCLIP2-H nhỉnh hơn một chút nhưng là mô hình cỡ H, chạy chậm hơn nhiều.}
+\label{tab:encoders}
+\end{table}
+
+DINOv3-L có AUC cao nhất trong nhóm cỡ L. CLIP-L có Avg nhỉnh hơn 0.0006, nhưng chênh lệch này nằm trong nhiễu (mục~\ref{sec:measure}), còn AUC của nó thấp hơn 0.004. Vì AUC là thứ chuyển được sang camera mới, chúng tôi chọn DINOv3-L làm bộ trích đặc trưng của mô hình nộp bài. CLIP-L vẫn được dùng, nhưng ở vai trò thầy (mục~\ref{sec:teachers}). Ở cỡ B, chúng tôi cũng thử PE-Core, SigLIP 2, EUPE, TIPSv2 và C-RADIOv3, và tất cả đều kém DINOv3-B. C-RADIOv3-B, một mô hình đã gộp sẵn nhiều thầy, đạt 0.7757 trên tập chấm so với 0.7775 của DINOv3-B.
+
+\paragraph{Chi tiết tinh chỉnh.} Tám block đầu của ViT-L được đóng băng. Các block đầu học đặc trưng cấp thấp như cạnh và kết cấu, vốn đã tốt sau tiền huấn luyện. Giữ nguyên chúng giảm nguy cơ mạng quên kiến thức tổng quát khi học trên ít dữ liệu, và giảm chi phí huấn luyện. Các block còn lại được học với learning rate giảm dần về phía đầu vào, mỗi block nhỏ hơn block sau nó 0.75 lần, theo cùng lý do.
+
+\subsection{Head: biến token thành 40 logit}
+\label{sec:head}
+
+\paragraph{Vấn đề.} Bộ trích đặc trưng trả về 67 token, mỗi token 1024 số. Bước tiếp theo phải biến chúng thành 40 con số, mỗi số cho một thuộc tính. Phần mạng làm việc này gọi là \textbf{head}.
+
+\paragraph{Cách đơn giản nhất và chỗ nó hỏng.} Head tuyến tính lấy token CLS, ghép với trung bình của 66 token ảnh, được một vector 2048 số dùng chung cho cả 40 thuộc tính, rồi nhân với một ma trận để ra 40 logit. Phép lấy trung bình là chỗ có vấn đề. Một cặp kính chỉ nằm trong khoảng một đến hai patch trên 66 patch. Khi lấy trung bình, tín hiệu của hai patch đó bị trộn với 64 patch còn lại, chủ yếu là quần áo và nền. Thuộc tính mũ, thuộc tính màu quần và thuộc tính kính đều phải đọc từ cùng một vector đã trộn đó.
+
+\paragraph{Yêu cầu.} Head tốt hơn cần cho mỗi thuộc tính tự chọn vùng ảnh để đọc. Nó cần học được từ khoảng 98 nghìn ảnh mà không cần nhãn vị trí, vì dữ liệu không có khung bao quanh mũ hay ba lô. Nó cũng phải rẻ so với bộ trích đặc trưng, để không ảnh hưởng tới ngân sách thời gian.
+
+\paragraph{Ý tưởng cốt lõi.} Mỗi thuộc tính được cấp một vector học được, gọi là \textbf{truy vấn} (query). Truy vấn so mình với từng token ảnh, gán trọng số cao cho token phù hợp, rồi lấy tổng có trọng số của các token. Phép tính này gọi là \textbf{cross-attention}. Vì truy vấn được học cùng phần còn lại của mạng chỉ từ nhãn có hoặc không, truy vấn của thuộc tính mũ sẽ tự học cách chú ý vào các token ở vùng đầu, bởi đó là nơi có thông tin giúp giảm hàm mất mát. Ý tưởng này đến từ Query2Label~\cite{q2l} và ML-Decoder~\cite{mldecoder} trong phân loại đa nhãn.
+
+\paragraph{Cơ chế.} Hình~\ref{fig:qhead} vẽ head truy vấn. Gọi $X\in\mathbb{R}^{67\times1024}$ là ma trận gồm token CLS và 66 token ảnh, và $q_k\in\mathbb{R}^{1024}$ là truy vấn của thuộc tính $k$. Head tính logit $z_k$ qua ba bước, sau đó là phần ước lượng kích thước và chi phí.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\sffamily\footnotesize, node distance=5mm and 5mm,
+  box/.style={draw=black!55, rounded corners=2pt, fill=white, align=center, minimum height=11mm, inner sep=4pt},
+  hl/.style={box, fill=acc!10, draw=acc!80!black, minimum height=22mm, text width=25mm},
+  arr/.style={-{Latex[length=2mm]}, black!65}]
+\node[hl] (att) {Bước 1\\ Cross-attention\\ 8 đầu, mỗi đầu 128 chiều\\[2pt] {\scriptsize trọng số $a_{kj}$ trên 67 token}};
+\node[box, left=12mm of att, yshift=14mm, text width=27mm] (tok) {67 token\\ (CLS và 66 ảnh)\\ ma trận $X$, 67×1024};
+\node[box, left=12mm of att, yshift=-14mm, text width=27mm] (q) {40 truy vấn học được\\ $q_k$, mỗi truy vấn 1024 số};
+\node[hl, right=of att, text width=21mm] (mlp) {Bước 2\\ MLP\\ 1024 → 2048 → 1024};
+\node[hl, right=of mlp, text width=24mm] (cls) {Bước 3\\ Bộ phân loại riêng\\ $z_k = w_k^\top h'_k + c_k$};
+\node[box, right=of cls] (z) {40 logit\\ $z_1,\dots,z_{40}$};
+\draw[arr] (tok.east) -- node[above, sloped, font=\sffamily\scriptsize] {khoá, giá trị} (att.north west);
+\draw[arr] (q.east) -- node[below, sloped, font=\sffamily\scriptsize] {truy vấn} (att.south west);
+\draw[arr] (att) -- node[above, font=\sffamily\scriptsize] {$h_k$} (mlp);
+\draw[arr] (mlp) -- node[above, font=\sffamily\scriptsize] {$h'_k$} (cls);
+\draw[arr] (cls)--(z);
+\end{tikzpicture}
+\caption{Head truy vấn với một tầng. Mỗi thuộc tính có một truy vấn riêng đọc các token bằng cross-attention, qua một MLP dùng chung, rồi qua một bộ phân loại riêng của thuộc tính đó. Hai phép cộng tắt (residual) và các lớp chuẩn hoá được lược bỏ trong hình.}
+\label{fig:qhead}
+\end{figure}
+
+\textit{Bước 1, cross-attention.} Truy vấn và token được chiếu sang không gian so sánh bằng ba ma trận học được, cho $Q_k=W_Q\,q_k$, $K_j=W_K\,x_j$ và $V_j=W_V\,x_j$ với mỗi token $x_j$. Trọng số chú ý của truy vấn $k$ lên token $j$ là
+\begin{equation}
+a_{kj}=\frac{\exp\big(Q_k^\top K_j/\sqrt{d}\big)}{\sum_{j'}\exp\big(Q_k^\top K_{j'}/\sqrt{d}\big)},
+\end{equation}
+với $d$ là số chiều của mỗi đầu attention. Tử số lớn khi truy vấn và token giống nhau trong không gian so sánh. Mẫu số chuẩn hoá để 67 trọng số cộng lại bằng 1. Kết quả của bước này là $h_k=q_k+W_O\sum_j a_{kj}V_j$. Vector $h_k$ là truy vấn cộng thêm tổng có trọng số của các token. Phép cộng $q_k$ vào là một \textbf{residual}, giữ lại thông tin ban đầu của truy vấn. Phép tính được làm song song ở 8 \textbf{đầu attention}, mỗi đầu 128 chiều, để mỗi đầu có thể chú ý vào một kiểu tín hiệu khác nhau, ví dụ một đầu theo màu, một đầu theo hình dạng.
+
+\textit{Bước 2, MLP.} Vector $h_k$ đi qua một mạng hai lớp mở rộng từ 1024 lên 2048 chiều rồi thu về 1024 chiều, với một residual nữa, cho $h'_k$. Bước này cho phép kết hợp phi tuyến các tín hiệu đã gom được ở bước 1.
+
+\textit{Bước 3, bộ phân loại riêng.} Mỗi thuộc tính có một vector trọng số $w_k$ và một số chặn $c_k$ riêng, và $z_k = w_k^\top h'_k + c_k$. Bộ phân loại riêng cho phép mỗi thuộc tính đọc các chiều khác nhau của $h'_k$.
+
+\textit{Kích thước và chi phí.} Ma trận chiếu của cross-attention có khoảng 4,2 triệu tham số, MLP có khoảng 4,2 triệu, còn 40 truy vấn và 40 bộ phân loại chỉ có khoảng 80 nghìn. Toàn bộ head có khoảng 8,5 triệu tham số, so với khoảng 300 triệu của ViT-L, và chiếm khoảng 2\% số phép tính của một lần suy luận. Head tuyến tính chỉ có khoảng 82 nghìn tham số.
+
+\paragraph{Đã so với những phương án nào.} Chúng tôi so head truy vấn với head tuyến tính và với 13 biến thể head khác trên ViT-B, giấu PETA (Phụ lục~\ref{app:neg}). Các biến thể gồm thêm tầng thứ hai, cho các truy vấn trao đổi thông tin với nhau qua self-attention trong một decoder bốn tầng, thêm tiên nghiệm không gian để truy vấn mũ ưu tiên vùng trên, đọc token từ bốn tầng cuối của ViT, dùng mixture of experts, quét tuần tự kiểu Mamba qua các thuộc tính, và một head tích chập theo CSRA. Head truy vấn một tầng hơn head tuyến tính 0.0054 điểm Avg trong đợt chạy đầu. Không biến thể nào hơn head truy vấn một tầng quá 0.0008, nhỏ hơn nhiều so với nhiễu 0.004, còn decoder bốn tầng kém 0.0049 và head tích chập kém 0.0067. Chúng tôi giữ phiên bản đơn giản nhất, một tầng.
+
+\paragraph{Một lưu ý quan trọng.} Head truy vấn làm Avg tăng, nhưng mục~\ref{sec:headrank} sẽ cho thấy nó không làm AUC tăng, nên lợi ích của nó chủ yếu nằm ở vị trí ngưỡng chứ không ở khả năng xếp hạng. Mục~\ref{sec:xai} kiểm tra trực tiếp rằng các truy vấn có nhìn đúng vùng như thiết kế mong muốn. Hai kết quả này cùng dẫn tới kết luận rằng giới hạn của xếp hạng nằm ở đặc trưng, không nằm ở head.
+
+\subsection{Logit, xác suất và ngưỡng}
+
+Head trả về cho mỗi thuộc tính một số thực $z_k$ gọi là \textbf{logit}. Logit có thể âm hoặc dương và không bị chặn. Hàm sigmoid $\sigma(z)=1/(1+e^{-z})$ đổi logit thành xác suất trong khoảng 0 đến 1 (Bảng~\ref{tab:logit}).
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+Logit $z$ & $-4$ & $-3$ & $-1$ & $0$ & $1$ & $3$ & $4$ \\
+Xác suất $\sigma(z)$ & 0.018 & 0.047 & 0.269 & 0.500 & 0.731 & 0.953 & 0.982 \\
+\bottomrule
+\end{tabular}
+\caption{Một vài giá trị của hàm sigmoid. Logit 0 ứng với xác suất 0.5, nên cắt xác suất ở 0.5 tương đương cắt logit ở 0.}
+\label{tab:logit}
+\end{table}
+
+Sigmoid đồng biến, nên ảnh có logit cao hơn luôn có xác suất cao hơn, và thứ tự các ảnh không đổi khi đi qua sigmoid. Cộng một số $o$ vào logit trước sigmoid tương đương dời ngưỡng logit từ 0 sang $-o$. Đây là cơ chế mà các cách đặt ngưỡng ở mục~\ref{sec:measure} và~\ref{sec:thr} sử dụng. Trong các hình của báo cáo, chúng tôi vẽ theo logit vì ở hai đầu, xác suất dồn sát 0 và 1 nên khó nhìn, còn logit trải đều hơn.
+
+\subsection{Hàm mất mát và vì sao nó dời logit}
+\label{sec:loss}
+
+\paragraph{Entropy chéo nhị phân.} Khi huấn luyện, với mỗi ảnh $i$ và thuộc tính $k$, logit được so với nhãn $y_{ik}$ bằng entropy chéo nhị phân:
+\begin{equation}
+\ell_{ik} = -\Big[w^+_k\,y_{ik}\log\sigma(z_{ik}) + w^-_k\,(1-y_{ik})\log\big(1-\sigma(z_{ik})\big)\Big].
+\end{equation}
+Số hạng thứ nhất phạt khi ảnh có thuộc tính mà xác suất thấp. Số hạng thứ hai phạt khi ảnh không có thuộc tính mà xác suất cao. Hai trọng số $w^+_k$ và $w^-_k$ quyết định mỗi loại lỗi bị phạt nặng tới đâu.
+
+\paragraph{Vấn đề của thuộc tính hiếm.} Nếu $w^+_k=w^-_k=1$, với một thuộc tính chỉ có ở 3\% số ảnh, mô hình có thể giảm hàm mất mát nhiều bằng cách luôn đoán xác suất thấp. Điều này đi ngược với độ chính xác cân bằng của chỉ số mA, vốn thưởng việc nhận ra thuộc tính hiếm.
+
+\paragraph{Trọng số DeepMAR.} DeepMAR~\cite{deepmar} đặt $w^+_k=e^{1-p_k}$ và $w^-_k=e^{p_k}$, với $p_k$ là tần suất của thuộc tính $k$ trên tập train. Thuộc tính càng hiếm, ô dương càng được phạt nặng hơn ô âm. Tỉ số $w^+_k/w^-_k=e^{1-2p_k}$ không vượt quá $e\approx2.7$, nên mức ưu tiên là vừa phải.
+
+\paragraph{Trọng số làm dời logit tối ưu.} Xét một nhóm ảnh giống nhau, trong đó tỉ lệ ảnh có thuộc tính là $\pi$. Nếu không có trọng số, logit làm hàm mất mát nhỏ nhất là $\log\frac{\pi}{1-\pi}$, đúng là logit của xác suất thật. Với trọng số, logit tối ưu trở thành
+\begin{equation}
+z^\star = \log\frac{\pi}{1-\pi} + \log\frac{w^+_k}{w^-_k} = \log\frac{\pi}{1-\pi} + (1-2p_k).
+\end{equation}
+Trọng số DeepMAR vì vậy cộng vào logit tối ưu một lượng cố định $1-2p_k$. Với người già ($p_k\approx0.03$), lượng này là 0.94, nên logit của mọi ảnh bị đẩy lên khoảng 0.94 so với logit của xác suất thật. Mục~\ref{sec:thr} sẽ trừ đúng lượng này khi suy ra quy tắc ngưỡng.
+
+\paragraph{Làm mềm nhãn.} Nhãn được làm mềm, nhãn 1 thành 0.975 và nhãn 0 thành 0.025. Trên dữ liệu huấn luyện, mô hình vì vậy được khuyến khích không đẩy xác suất vượt quá 0.975 hoặc xuống dưới 0.025, tương ứng logit trong khoảng $-3.7$ đến $3.7$. Điều chỉnh này giảm mức phạt khi nhãn gốc sai, điều thường gặp ở thuộc tính màu, như mục~\ref{sec:xai} minh hoạ.
+
+\paragraph{Lấy mẫu các bộ dữ liệu.} PA100k chiếm 81\% ảnh train. Nếu lấy ảnh ngẫu nhiên đều, mô hình chủ yếu học thói quen của PA100k. Chúng tôi lấy bộ dữ liệu $d$ với xác suất tỉ lệ với $\sqrt{N_d}$, với $N_d$ là số ảnh của bộ đó. Cách này giảm tỉ trọng của PA100k xuống khoảng 59\% số ảnh mỗi epoch mà không phải lặp lại ảnh của hai bộ nhỏ quá nhiều lần.
 
 \begin{ghichu}
-Mỗi quyết định có hoặc không đi qua hai bước tách biệt. Bộ trích đặc trưng và head cho ra một logit. Logit này được so với một ngưỡng. Báo cáo này tìm xem trên camera mới, bước nào hỏng nhiều hơn.
+Mỗi quyết định có hoặc không đi qua hai bước tách biệt. Bộ trích đặc trưng và head cho ra một logit, và logit này được so với một ngưỡng. Bộ trích đặc trưng được chọn theo AUC vì AUC đo đúng phần chuyển được sang camera mới. Head truy vấn cho mỗi thuộc tính tự chọn vùng ảnh để đọc. Trọng số trong hàm mất mát dời logit một lượng biết trước, và lượng này sẽ được dùng lại khi đặt ngưỡng.
 \end{ghichu}
 
 %=====================================================================
@@ -335,9 +458,9 @@ Không biến thể nào vượt mốc quá 0.0008 điểm Avg, nhỏ hơn nhi�
 Giải thích đơn giản nhất là mọi head đọc cùng một bộ token. Head chỉ chọn cách cân các token, chứ không tạo được thông tin mà token không chứa. Nếu token của hai ảnh không đủ khác nhau để phân biệt áo xám với áo trắng, không cách cân nào tách được chúng.
 
 \subsection{Head truy vấn giúp đặt ngưỡng, không giúp xếp hạng}
-\label{sec:head}
+\label{sec:headrank}
 
-Head truy vấn là thay đổi head duy nhất mà chúng tôi giữ lại. Phép tách hai kiểu sai cho thấy cần đọc lợi ích của nó thận trọng. Trên cả hai bộ trích đặc trưng, head truy vấn làm Avg tăng nhưng làm AUC giảm nhẹ (Bảng~\ref{tab:head}). Lợi ích của nó vì vậy là đặt ngưỡng 0.5 tốt hơn trên miền nguồn, đúng loại lợi ích chuyển kém nhất sang miền mới. Tập chấm cùng chiều với nhận định này. ViT-B với head tuyến tính đạt 0.7775 trên tập chấm, với head truy vấn đạt 0.7750, chênh lệch nằm trong nhiễu của tập chấm.
+Mục~\ref{sec:head} đã mô tả head truy vấn và lý do chọn nó. Phép tách hai kiểu sai cho thấy cần đọc lợi ích của nó thận trọng. Trên cả hai bộ trích đặc trưng, head truy vấn làm Avg tăng nhưng làm AUC giảm nhẹ (Bảng~\ref{tab:head}). Lợi ích của nó vì vậy là đặt ngưỡng 0.5 tốt hơn trên miền nguồn, đúng loại lợi ích chuyển kém nhất sang miền mới. Tập chấm cùng chiều với nhận định này. ViT-B với head tuyến tính đạt 0.7775 trên tập chấm, với head truy vấn đạt 0.7750, chênh lệch nằm trong nhiễu của tập chấm.
 
 \begin{table}[H]
 \centering\small
@@ -438,7 +561,7 @@ Chúng tôi chọn 176×96 vì đây là cấu hình lớn nhất còn chạy k�
 
 Độ chính xác của mô hình được ghép dự báo gần như hoàn hảo lợi ích của cặp (hệ số tương quan hạng Spearman 0.93). Độ tương quan logit chỉ có tác dụng phụ khi đã tính tới độ chính xác. Ví dụ, một bản DINOv3-L thứ hai ở 224×112 chính xác ngang CLIP-L (0.8061 so với 0.8063), nhưng logit của nó gần như trùng với DINOv3-L gốc (tương quan 0.956), nên ghép vào chỉ tăng 0.0047 thay vì 0.0108 của CLIP-L. Hệ quả thực tế là nên chọn mô hình chính xác nhất thuộc một họ tiền huấn luyện khác. Chúng tôi chọn CLIP-L~\cite{clip}, học từ cặp ảnh và văn bản.
 
-\paragraph{Chưng cất.} Mỗi thầy được tinh chỉnh 3 epoch. Khi huấn luyện trò, mỗi batch ảnh đã tăng cường được đưa qua từng thầy ở độ phân giải riêng của thầy. Logit của hai thầy được lấy trung bình thành $\bar z^{T}$. Hàm mất mát của trò là $(1-\alpha)\mathcal{L}_{\text{nhãn}} + \alpha\,\mathrm{BCE}\big(\sigma(z),\sigma(\bar z^{T})\big)$ với $\alpha=0.8$. Số hạng thứ nhất là hàm mất mát nhãn ở mục~\ref{sec:model}. Số hạng thứ hai đo khoảng cách giữa xác suất của trò và xác suất trung bình của hai thầy. Hệ số $\alpha=0.8$ cho trò học chủ yếu từ thầy.
+\paragraph{Chưng cất.} Mỗi thầy được tinh chỉnh 3 epoch. Khi huấn luyện trò, mỗi batch ảnh đã tăng cường được đưa qua từng thầy ở độ phân giải riêng của thầy. Logit của hai thầy được lấy trung bình thành $\bar z^{T}$. Hàm mất mát của trò là $(1-\alpha)\mathcal{L}_{\text{nhãn}} + \alpha\,\mathrm{BCE}\big(\sigma(z),\sigma(\bar z^{T})\big)$ với $\alpha=0.8$. Số hạng thứ nhất là hàm mất mát nhãn ở mục~\ref{sec:loss}. Số hạng thứ hai đo khoảng cách giữa xác suất của trò và xác suất trung bình của hai thầy. Hệ số $\alpha=0.8$ cho trò học chủ yếu từ thầy.
 
 \begin{table}[H]
 \centering\small
@@ -477,7 +600,7 @@ Offset ở mục~\ref{sec:offset} có 40 tham số, mỗi thuộc tính một th
 
 \paragraph{Ý tưởng cốt lõi.} Thành phần mA của điểm là độ chính xác cân bằng. Lý thuyết quyết định Bayes cho biết quyết định tối ưu cho độ chính xác cân bằng là quyết định của một mô hình tin rằng có và không có thuộc tính là hai khả năng bằng nhau~\cite{saerens,logitadj}. Mô hình của ta thì được huấn luyện trên dữ liệu mà thuộc tính chỉ xuất hiện với tần suất $p_k$. Chuyển từ niềm tin dựa trên tần suất $p_k$ sang niềm tin cân bằng 50/50 tương đương cộng vào logit một lượng $\log\frac{1-p_k}{p_k}$.
 
-\paragraph{Trừ đi phần đã dời.} Trọng số DeepMAR trong hàm mất mát đã dời logit tối ưu theo cùng chiều một lượng $\log(w^+_k/w^-_k)=1-2p_k$. Phần còn thiếu là
+\paragraph{Trừ đi phần đã dời.} Trọng số DeepMAR trong hàm mất mát đã dời logit tối ưu theo cùng chiều (mục~\ref{sec:loss}) một lượng $\log(w^+_k/w^-_k)=1-2p_k$. Phần còn thiếu là
 \begin{equation}
 b_k = \log\frac{1-p_k}{p_k} - (1-2p_k).
 \label{eq:theory}
@@ -561,6 +684,8 @@ Kết quả trên tập chấm khớp với phép tách hai kiểu sai. Thay đ�
 \bibitem{krogh} A.~Krogh, J.~Vedelsby. Neural network ensembles, cross validation, and active learning. \textit{NeurIPS}, 1995.
 \bibitem{saerens} M.~Saerens, P.~Latinne, C.~Decaestecker. Adjusting the outputs of a classifier to new a priori probabilities: A simple procedure. \textit{Neural Computation}, 2002.
 \bibitem{logitadj} A.~K.~Menon, S.~Jayasumana, A.~S.~Rawat và cộng sự. Long-tail learning via logit adjustment. \textit{ICLR}, 2021.
+\bibitem{q2l} S.~Liu, L.~Zhang, X.~Yang, H.~Su, J.~Zhu. Query2Label: A simple transformer way to multi-label classification. \textit{arXiv:2107.10834}, 2021.
+\bibitem{mldecoder} T.~Ridnik, G.~Sharir, A.~Ben-Cohen, E.~Ben-Baruch, A.~Noy. ML-Decoder: Scalable and versatile classification head. \textit{WACV}, 2023.
 \bibitem{ig} M.~Sundararajan, A.~Taly, Q.~Yan. Axiomatic attribution for deep networks. \textit{ICML}, 2017.
 \bibitem{patient} L.~Beyer, X.~Zhai, A.~Royer và cộng sự. Knowledge distillation: A good teacher is patient and consistent. \textit{CVPR}, 2022.
 \bibitem{domainbed} I.~Gulrajani, D.~Lopez-Paz. In search of lost domain generalization. \textit{ICLR}, 2021.
