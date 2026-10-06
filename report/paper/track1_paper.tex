@@ -530,6 +530,24 @@ Head truy vấn được thiết kế để mỗi thuộc tính tự đọc vùn
 
 Ở cả sáu ca đúng, attention rơi đúng vùng mà thuộc tính mô tả: vùng đầu cho mũ và kính, quai đeo vai cho ba lô, nửa dưới cơ thể cho váy, thân trên cho áo đỏ; với thuộc tính nữ, attention phủ đầu và tóc. Các ca sai cho nhiều thông tin hơn. Ở ba ca, nhìn bằng mắt thì ảnh mâu thuẫn với nhãn: một người đội mũ vải sáng màu nhưng nhãn ghi không đội mũ, một chiếc áo khoác đỏ nhưng nhãn ghi không phải áo đỏ, và một quai đeo vắt qua vai nhưng nhãn ghi không có ba lô. Attention ở cả ba ca đều nằm đúng vùng, nên đây giống lỗi nhãn hoặc khác biệt quy ước gán nhãn hơn là lỗi của mô hình, nhất quán với giải thích ở mục~\ref{sec:decomp}. Ca báo nhầm váy là một ảnh rất mờ với quần tối màu. Hai ca bỏ sót là lỗi nhận thức thật. Với thuộc tính nữ, ảnh mờ chụp từ sau lưng, attention tản ra khắp người và cả mặt đường. Với kính, khuôn mặt chỉ chiếm vài mảnh ảnh. Integrated Gradients nhiễu hơn attention nhiều ở độ phân giải này và phần lớn chỉ ra cùng các vùng. Đây là 12 ca được chọn; chúng cho thấy head làm gì, không đo được mỗi loại lỗi xảy ra thường xuyên đến đâu. Mã tạo hình nằm trong \texttt{report/xai/}, kèm một trang tương tác cho phép chọn ảnh và thuộc tính bất kỳ.
 
+\paragraph{Che ảnh.} Attention cho biết truy vấn đọc ở đâu, chưa cho biết quyết định phụ thuộc vào đâu. Vì vậy chúng tôi che từng vùng và đo tác động trên toàn bộ 6.963 ảnh val của PETA mà mô hình chưa thấy. Khung ảnh được chia thành ba dải ngang: đầu (20\% trên cùng của chiều cao), thân trên (20 đến 55\%) và thân dưới (55 đến 100\%). Mỗi dải hoặc bị tô bằng màu trung bình, hoặc được giữ lại một mình còn hai dải kia bị tô. Hình~\ref{fig:occ} cho mức thay đổi AUC trên miền giấu theo từng nhóm thuộc tính.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{occlusion_auc.png}
+\caption{AUC trên miền giấu thay đổi bao nhiêu khi che một dải ngang (ba cột trái) hoặc chỉ giữ một dải (ba cột phải), trên toàn bộ ảnh val của PETA, với mô hình chưa từng thấy PETA. Số trong ngoặc là AUC khi đủ ảnh.}
+\label{fig:occ}
+\end{figure}
+
+Mỗi nhóm phụ thuộc chủ yếu vào đúng dải mà nó mô tả. Che đầu làm AUC giảm 0.25 với mũ, 0.21 với kính và 0.16 với độ dài tóc. Che thân trên làm AUC giảm 0.22 với áo ngắn tay và 0.24 với ba lô và túi. Che thân dưới làm AUC giảm 0.22 với quần ngắn và 0.16 với màu quần. Chỉ giữ đúng dải đó thì mất ít hơn nhiều: 0.04 với mũ và 0.02 với màu quần. Tuổi dựa vào vùng đầu: chỉ riêng vùng đầu đã cho AUC bằng ảnh đủ (0.754 so với 0.751). Giới tính là ngoại lệ. Che một dải bất kỳ chỉ làm AUC giảm tối đa 0.05, và không dải nào một mình đạt gần ảnh đủ (0.78 đến 0.85 so với 0.95), nên mô hình kết hợp bằng chứng từ cả cơ thể. Che trượt một ô $32\times32$ trên 12 ca của Hình~\ref{fig:xai} cho kết quả khớp với attention (Hình~\ref{fig:occmaps}): logit giảm mạnh nhất khi vùng mà thuộc tính nói tới bị che, như vùng đầu với mũ và kính, thân trên với áo đỏ và nửa dưới với váy, kể cả ở các ca sai nghi do nhãn.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{occlusion_maps.png}
+\caption{Che trượt trên các ca của Hình~\ref{fig:xai}: mức giảm logit của thuộc tính khi một ô màu trung bình $32\times32$ che từng vị trí. Đỏ: ô che giấu bằng chứng ủng hộ thuộc tính; xanh: bằng chứng chống lại.}
+\label{fig:occmaps}
+\end{figure}
+
 \subsection{Những gì không hiệu quả}
 \label{sec:neg}
 

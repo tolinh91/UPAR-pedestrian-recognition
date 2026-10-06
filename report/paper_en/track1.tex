@@ -306,6 +306,22 @@ The query head was motivated by letting each attribute read its own image region
 
 In all six correct cases the attention falls on the region the attribute describes: the head for hat and glasses, the shoulder strap for backpack, the lower body for skirt and the torso for the red top; for female it covers the head and hair. The errors are more informative. In three of them the image, by visual inspection, contradicts the label: a person in a light cap labelled without a hat, a red jacket labelled as not a red top, and a strap across the shoulder labelled as no backpack. Attention sits on the right region in each, so these look like labelling conventions or label noise rather than failures of the model, consistent with the labelling-convention explanation of \cref{sec:gap}. The skirt false alarm is a heavily blurred image with a dark lower garment. The two misses are failures of perception: for female, a blurred back view, attention spreads over the body and onto the ground; for glasses, the face covers only a few patches. Integrated Gradients is much noisier than attention at this resolution and mostly marks the same regions. These are twelve selected cases; they show what the head does, not how often each kind of error occurs.
 
+\paragraph{Occlusion.} Attention shows where a query reads, not what the decision depends on. We therefore hide regions and measure the effect on all 6{,}963 unseen PETA validation images. The crop is split into three horizontal bands (head: the top 20\% of the height; upper body: 20--55\%; lower body: 55--100\%), and each band is either filled with the mean colour or kept alone. \Cref{fig:occ} reports the change in held-out AUC per attribute group. Every group depends mainly on the band it describes. Masking the head lowers AUC by 0.25 for hat, 0.21 for glasses and 0.16 for hair length; masking the upper body lowers it by 0.22 for sleeve length and 0.24 for backpack and bag; masking the lower body lowers it by 0.22 for lower length and 0.16 for lower colour. Keeping only that band costs far less: 0.04 for hat and 0.02 for lower colour. Age relies on the head, which alone gives the full-image AUC (0.754 against 0.751). Gender is the exception. Masking any single band costs at most 0.05, and no band alone comes close to the full image (0.78--0.85 against 0.95), so the model combines evidence from the whole body. A sliding $32\times32$ occlusion on the twelve cases of \cref{fig:xai} agrees with the attention maps (\cref{fig:occmaps}): the logit falls most when the region named by the attribute is hidden, such as the head for hat and glasses, the torso for the red top and the lower body for the skirt, and this holds for the errors that look like label conventions as well.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{occlusion_auc.pdf}
+\caption{Change in held-out AUC when one horizontal band is masked (left three columns) or kept alone (right three), on all PETA validation images, for a model that never saw PETA. The full-image AUC is given after each group name.}
+\label{fig:occ}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{occlusion_maps.pdf}
+\caption{Sliding occlusion on the cases of \cref{fig:xai}: drop of the attribute's logit when a $32\times32$ mean-colour square covers each position. Red: the square hid evidence for the attribute; blue: evidence against it.}
+\label{fig:occmaps}
+\end{figure}
+
 %=====================================================================
 \section{Hidden-Test Results}
 \label{sec:test}

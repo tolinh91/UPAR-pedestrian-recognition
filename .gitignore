@@ -272,3 +272,4 @@ par/upar/models/radio_nv/*.py
 !par/upar/models/radio_nv/__init__.py
 report/xai/xai_data.json
 report/xai/attention.html
+report/xai/occlusion.json
