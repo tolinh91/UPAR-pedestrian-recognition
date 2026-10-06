@@ -21,9 +21,12 @@ INK, MUTED, BLUE, ORANGE, AQUA, YELLOW, GRAY, RED = "#121211", "#85837c", "#2a78
 
 
 def fig_thresholds():
-    """Theory rule (tau = 0.42) vs fitted offsets x0.6 on every LODO run, and the mean curves of both families."""
+    """Theory rule (tau = 0.42) vs fitted offsets x0.75 (best scale on PETA) on every LODO run with saved held-out
+    logits (clipL_168_PETA is a byte-identical copy of T_clipL_PETA and is skipped), and the mean curves."""
     rows = []
     for f in sorted(glob(str(RUNS / "remote*" / "*" / "offset_proxy_last.json"))):
+        if not Path(f).with_name("held_val_logits_last.npz").exists() or Path(f).parent.name == "clipL_168_PETA":
+            continue
         d = json.load(open(f))
         held = json.load(open(f.replace("offset_proxy_last.json", "args.json")))["holdout"]
         rows.append((held, d))
@@ -43,17 +46,17 @@ def fig_thresholds():
     cols = {"PETA": BLUE, "Market1501": AQUA, "PA100k": YELLOW}
     diffs = {h: [] for h in cols}
     for h, d in rows:
-        diffs[h].append(d["theory tau = 0.42"]["Challenge_Avg"] - d["fitted offsets x 0.60"]["Challenge_Avg"])
+        diffs[h].append(d["theory tau = 0.42"]["Challenge_Avg"] - d["fitted offsets x 0.75"]["Challenge_Avg"])
     y = 0
     for h, v in diffs.items():
         v = np.array(v)
         axs[1].scatter(v, y + np.random.default_rng(0).uniform(-.18, .18, len(v)), s=16, color=cols[h], edgecolor="white", lw=.6, zorder=3)
-        axs[1].text(0.0105, y, f"{(v > 0).sum()}/{len(v)} thắng", va="center", fontsize=7.6, color=INK)
+        axs[1].text(1.02, y, f"{(v > 0).sum()}/{len(v)} thắng", va="center", fontsize=7.6, color=INK, transform=axs[1].get_yaxis_transform())
         y -= 1
     axs[1].axvline(0, color=MUTED, lw=.8)
     axs[1].set_yticks([0, -1, -2], [f"giấu {h}" for h in cols]); axs[1].tick_params(axis="y", length=0)
-    axs[1].set_xlabel("Avg(τ = 0.42) − Avg(offset × 0.6)"); axs[1].grid(axis="y", visible=False)
-    axs[1].set_xlim(-0.006, 0.0135)
+    axs[1].set_xlabel("Avg(τ = 0.42) − Avg(offset × 0.75)"); axs[1].grid(axis="y", visible=False)
+    axs[1].set_xlim(-0.010, 0.0125)
     fig.tight_layout(); fig.savefig(FIG / "thresholds.png"); plt.close(fig)
     n = sum(len(v) for v in diffs.values()); w = sum((np.array(v) > 0).sum() for v in diffs.values())
     print(f"theory beats offsets in {w}/{n} runs")

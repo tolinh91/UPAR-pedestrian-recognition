@@ -37,13 +37,13 @@
 \begin{document}
 
 \begin{center}
-{\sffamily\bfseries\LARGE Nhận dạng thuộc tính người đi bộ trên miền ảnh chưa thấy\\[2pt] dưới ràng buộc tính toán chỉ dùng CPU}\\[8pt]
+{\sffamily\bfseries\LARGE Xếp hạng chuyển được, ngưỡng thì không:\\[2pt] nhận dạng thuộc tính người đi bộ trên miền camera chưa thấy}\\[8pt]
 {\large Báo cáo kỹ thuật, UPAR Challenge 2027, Track 1 (Pedestrian Attribute Recognition)}\\[6pt]
-{\small Tài khoản Codabench \texttt{tannguyenbmt47} \quad Ngày 04/10/2026}
+{\small Tài khoản Codabench \texttt{tannguyenbmt47} \quad Cập nhật ngày 06/10/2026}
 \end{center}
 
 \begin{abstract}
-\noindent Track 1 của UPAR Challenge 2027 yêu cầu dự đoán 40 thuộc tính nhị phân cho ảnh cắt của một người đi bộ, trên một tập chấm lấy từ miền camera không xuất hiện trong dữ liệu huấn luyện, và chương trình phải chạy trọn 29.248 ảnh trong 3600 giây trên 6 luồng CPU. Báo cáo trình bày hệ thống đạt 0.7912 Challenge\_Avg trên tập chấm ẩn, đứng đầu bảng xếp hạng tại thời điểm nộp, cùng quá trình tư duy dẫn tới nó. Hệ thống gồm bốn thành phần. Thứ nhất là backbone DINOv3 ViT-L ở độ phân giải 176×96, được chọn từ một phép đánh đổi giữa độ chính xác và thời gian chạy trên CPU. Thứ hai là một head truy vấn theo thuộc tính. Thứ ba là chưng cất kiến thức từ hai mô hình thầy có kiểu tiền huấn luyện khác nhau (DINOv3-L và CLIP-L). Thứ tư là một quy tắc dời ngưỡng suy ra từ giả thiết dịch chuyển nhãn, thay cho việc khớp ngưỡng trên dữ liệu nguồn. Toàn bộ quyết định được đưa ra trên một giao thức thẩm định giấu từng bộ dữ liệu (leave-one-dataset-out), vì điểm trên dữ liệu cùng miền (0.885) không dự báo được điểm trên tập chấm (0.777). Ngoài kết quả dương tính, báo cáo ghi lại hơn 40 thay đổi không cải thiện được kết quả. Ba kết luận chính được rút ra. Khả năng xếp hạng của backbone là nút thắt, nên mọi thay đổi ở head, loss và tăng cường dữ liệu chỉ dao động trong biên độ nhiễu. Mức lợi của tổ hợp thầy (0.0108) chỉ được chuyển sang mô hình trò khoảng một phần tư, và thêm thầy thứ ba không cải thiện trò. Cuối cùng, tốc độ CPU của máy chấm dao động khoảng hai lần giữa các lần chạy, khiến một mô hình chạy kịp giờ ở lần này có thể quá giờ ở lần sau, nên ngân sách thời gian phải được thiết kế cho máy chậm nhất từng quan sát.
+\noindent Một mô hình nhận dạng thuộc tính người đi bộ mất nhiều độ chính xác khi gặp camera chưa thấy. Hệ thống đầu tiên của chúng tôi đạt 0.885 trên dữ liệu cùng miền nhưng chỉ 0.777 trên tập chấm của UPAR 2027 Track~1, vốn lấy từ một miền camera mới. Khi không có nhãn của camera mới, người thiết kế không biết phần mất này đến từ việc \emph{xếp hạng} ảnh kém hay từ việc \emph{đặt ngưỡng} 0.5 sai chỗ, trong khi hai nguyên nhân cần hai cách chữa khác nhau. Chúng tôi tách hai phần này trên ba bộ dữ liệu giấu, bằng cách so ngưỡng khớp trên dữ liệu nguồn với ngưỡng khớp trên chính nhãn của bộ giấu. Phần do ngưỡng chiếm 2.2 đến 2.4 điểm Challenge\_Avg ở cả ba bộ, tập trung ở các thuộc tính màu quần áo, và dữ liệu nguồn không khôi phục được nó. Phần do xếp hạng thì phản ứng với backbone chứ không phản ứng với head. Trên một ViT-B cố định, không biến thể nào trong 25 biến thể head, loss và tăng cường dữ liệu vượt nhiễu giữa các lần chạy, trong khi DINOv3 ViT-L ở độ phân giải giảm thì vượt. Chúng tôi hành động theo cả hai phát hiện. Về xếp hạng, chúng tôi chưng cất hai mô hình thầy cỡ L vào ViT-L. Mô hình trò tăng AUC trên miền giấu và, khác với mô hình chỉ học nhãn, tiếp tục tốt lên khi huấn luyện lâu hơn. Về ngưỡng, chúng tôi dùng một phép điều chỉnh logit chỉ có một hệ số, có tính tới trọng số của hàm mất mát. Quy tắc này ổn định hơn offset khớp trên dữ liệu khoảng bốn lần giữa các lần chạy lặp và chuyển được từ Market1501 và PA100k sang PETA, nhưng thất bại khi bộ dữ liệu lớn nhất bị giấu. Hệ thống đạt 0.7912 Challenge\_Avg trên tập chấm ẩn.
 \end{abstract}
 
 \tableofcontents
@@ -62,10 +62,10 @@ Phiên bản 2027 thêm một ràng buộc thứ hai. Đội thi không nộp d�
 Báo cáo này mô tả hệ thống của chúng tôi và quá trình đi tới nó. Chúng tôi trình bày theo thứ tự lập luận thay vì thứ tự thời gian. Mỗi thành phần được giới thiệu cùng với vấn đề nó giải quyết, phép thử dùng để chấp nhận nó, và các phương án thay thế đã bị loại. Các đóng góp chính gồm bốn điểm.
 
 \begin{enumerate}[leftmargin=1.4em]
-\item Một giao thức thẩm định thay thế giấu từng bộ dữ liệu, cùng một phép phân rã lỗi thành phần do khả năng xếp hạng (AUC) và phần do vị trí ngưỡng. Phép phân rã giải thích được vì sao một số thay đổi tăng điểm trên giao thức thay thế nhưng giảm điểm trên tập chấm (mục~\ref{sec:proxy}).
-\item Một khảo sát có kiểm soát trên hơn 35 biến thể head, loss và tăng cường dữ liệu, cho thấy với backbone cố định, mọi biến thể nằm trong khoảng $\pm 0.003$ quanh mốc. Kết quả này chỉ ra nút thắt nằm ở backbone (mục~\ref{sec:sweep}).
-\item Một phân tích tính bổ trợ giữa các mô hình nền tảng làm thầy, cho thấy lợi ích của tổ hợp phụ thuộc vào độ khác biệt của kiểu tiền huấn luyện nhiều hơn là điểm riêng lẻ của từng thầy. Phân tích còn đo được tỉ lệ lợi ích mà chưng cất chuyển được sang trò (mục~\ref{sec:kd}).
-\item Một quy tắc dời ngưỡng suy ra từ giả thiết dịch chuyển nhãn, không cần khớp tham số trên dữ liệu nguồn. Quy tắc này thắng cách khớp ngưỡng truyền thống ở 45 trên 49 lần chạy thẩm định và tăng 0.0016 điểm trên tập chấm (mục~\ref{sec:thr}).
+\item Một phép phân rã lỗi trên miền mới thành phần do xếp hạng và phần do ngưỡng, đo trên cả ba bộ dữ liệu giấu. Phần do ngưỡng ổn định ở khoảng 2.2 điểm và không khôi phục được từ dữ liệu nguồn (mục~\ref{sec:decomp}).
+\item Bằng chứng rằng khả năng xếp hạng trên miền mới do backbone và tín hiệu huấn luyện quyết định, không do head: 25 biến thể head, loss và tăng cường đều nằm trong nhiễu. Head truy vấn mà chúng tôi giữ lại thực chất giúp đặt ngưỡng, không giúp xếp hạng (mục~\ref{sec:sweep} và~\ref{sec:head}).
+\item Một phân tích chọn thầy cho thấy lợi ích khi ghép mô hình phụ thuộc chủ yếu vào độ chính xác của mô hình được ghép (Spearman 0.93 trên 9 mô hình), còn độ khác biệt chỉ có tác dụng phụ. Chưng cất làm tăng AUC và làm cho huấn luyện dài hơn trở nên có ích (mục~\ref{sec:comp} và~\ref{sec:transfer}).
+\item Một quy tắc ngưỡng một tham số suy ra từ thành phần độ chính xác cân bằng của chỉ số. Quy tắc này ít nhạy với nhiễu huấn luyện hơn offset khớp trên dữ liệu khoảng bốn lần, chuyển được ngoài mẫu theo một chiều và thất bại theo chiều kia. Báo cáo nói rõ cả hai (mục~\ref{sec:thr} và~\ref{sec:threxp}).
 \end{enumerate}
 
 Báo cáo cũng ghi lại các bài học vận hành từ những lần nộp thất bại, vì chúng chiếm phần lớn khoảng cách giữa điểm tốt nhất và điểm đang hiển thị trên bảng xếp hạng (mục~\ref{sec:lb}).
@@ -176,14 +176,55 @@ Ngưỡng trong giao thức được xử lý giống hệt bài nộp. Offset c
 
 \subsection{Nhiễu và ngưỡng chấp nhận}
 
-Hai lần chạy giống hệt nhau của cùng cấu hình ViT-B cho Avg 0.7961 và 0.7956 sau dời ngưỡng, nhưng lệch 0.0016 trước dời ngưỡng và 0.0033 ở AUC. Ngoài ra, khi chọn biến thể tốt nhất trong khoảng 35 biến thể có nhiễu độ lệch chuẩn $\sigma\approx0.001$, điểm của biến thể thắng bị thổi lên khoảng $2\sigma$. Vì hai lý do này, chúng tôi chỉ chấp nhận một thay đổi khi nó hơn mốc ít nhất 0.003 trên PETA giấu và không làm giảm điểm ở các miền giấu khác.
+Ba cặp lần chạy trong log chỉ khác nhau ở seed hoặc là hai lần chạy cùng cấu hình (Bảng~\ref{tab:noise}). Chúng cho thấy điểm sau ngưỡng nhiễu hơn chúng tôi tưởng lúc đầu: một cặp lệch 0.0046 khi dùng offset khớp trên dữ liệu. Gộp ba cặp lại, độ lệch chuẩn giữa hai lần chạy là 0.0030 với logit thô, 0.0020 với offset, 0.0005 với quy tắc $\tau$ ở mục~\ref{sec:thr}, và 0.0008 với AUC. Chúng tôi coi mọi chênh lệch nhỏ hơn khoảng hai lần độ lệch chuẩn là hoà, nghĩa là khoảng 0.004 với offset. Các khảo sát head và độ phân giải (mục~\ref{sec:sweep}, \ref{sec:backbone}) thuộc một đợt chạy cũ hơn không lưu logit. Cặp lặp duy nhất của đợt đó lệch 0.0005 với offset, 0.0016 với logit thô và 0.0033 với AUC. Chúng tôi chỉ so số trong cùng một đợt.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Cặp lặp (PETA giấu) & thô & offset × 0.6 & $\tau=0.42$ & AUC \\
+\midrule
+ViT-L truy vấn, 3 epoch & 0.7971 / 0.7978 & 0.8026 / 0.8072 & 0.8078 / 0.8080 & 0.9126 / 0.9128 \\
+ViT-B truy vấn, 5 epoch & 0.7878 / 0.7883 & 0.7946 / 0.7931 & 0.7948 / 0.7940 & 0.9019 / 0.9000 \\
+ViT-B tuyến tính, 5 epoch & 0.7801 / 0.7729 & 0.7903 / 0.7902 & 0.7905 / 0.7914 & 0.9035 / 0.9041 \\
+\midrule
+độ lệch chuẩn gộp & 0.0030 & 0.0020 & 0.0005 & 0.0008 \\
+\bottomrule
+\end{tabular}
+\caption{Nhiễu giữa các lần chạy lặp. Quy tắc $\tau$ là cách đọc ít nhiễu nhất của cùng một bộ logit.}
+\label{tab:noise}
+\end{table}
 
 \subsection{Phân rã lỗi thành xếp hạng và ngưỡng}
 \label{sec:decomp}
 
 Một mô hình có thể mất điểm trên miền mới vì hai lý do khác nhau về bản chất. Lý do thứ nhất là nó không phân biệt được ảnh, ví dụ cho người áo đỏ và người áo cam xác suất ``áo đỏ'' gần bằng nhau. Lý do thứ hai là nó xếp hạng đúng nhưng mọi xác suất của một thuộc tính bị lệch đều về một phía, khiến ngưỡng 0.5 nằm sai chỗ. Khả năng xếp hạng được đo bằng \textbf{AUC} (tạm dịch: diện tích dưới đường cong ROC). AUC bằng xác suất một ảnh dương ngẫu nhiên có điểm cao hơn một ảnh âm ngẫu nhiên, nên không phụ thuộc vào ngưỡng.
 
-Để tách hai lý do, chúng tôi khớp offset trực tiếp trên nhãn của miền giấu, gọi là \textbf{oracle offset}. Offset này không dùng được khi nộp bài, nhưng hiệu giữa điểm với oracle offset và điểm với offset khớp trên miền nguồn chính là phần điểm mất do ngưỡng. Hình~\ref{fig:gap} cho thấy phần này khoảng 0.02 trên PETA và tập trung ở các thuộc tính màu áo và màu quần.
+Để tách hai lý do, chúng tôi khớp offset trực tiếp trên nhãn của miền giấu, gọi là \textbf{oracle offset}. Offset này không dùng được khi nộp bài, nhưng hiệu giữa điểm với oracle offset và điểm với offset khớp trên miền nguồn chính là phần điểm mất do ngưỡng; phần còn lại là vấn đề xếp hạng. Bảng~\ref{tab:gap} đo phần này cho bốn mô hình trên cả ba bộ giấu. Hình~\ref{fig:gap} minh hoạ trường hợp PETA.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Bộ giấu & PETA & Market1501 & PA100k & PETA \\
+Mô hình & ViT-B & ViT-B & ViT-B & ViT-L \\
+\midrule
+Avg, logit thô & 0.7878 & 0.8421 & 0.7677 & 0.7968 \\
+Avg, offset khớp trên miền nguồn & 0.7946 & 0.8464 & 0.7975 & 0.8033 \\
+Avg, oracle offset & 0.8165 & 0.8690 & 0.8210 & 0.8250 \\
+\textbf{phần mất do ngưỡng} & \textbf{0.0219} & \textbf{0.0226} & \textbf{0.0235} & \textbf{0.0217} \\
+\midrule
+$\Delta$ độ chính xác cân bằng, 12 màu áo & +3.7 & +2.6 & +7.4 & +4.0 \\
+$\Delta$ độ chính xác cân bằng, 12 màu quần & +5.3 & +6.8 & +6.1 & +4.3 \\
+$\Delta$ độ chính xác cân bằng, tuổi & $-$2.7 & +6.7 & +6.3 & $-$3.0 \\
+$\Delta$ độ chính xác cân bằng, tóc & $-$2.9 & +4.2 & $-$0.1 & $-$1.9 \\
+\bottomrule
+\end{tabular}
+\caption{Phần điểm mất do ngưỡng trên ba bộ giấu (head truy vấn). Các dòng $\Delta$ (điểm phần trăm) là mức tăng độ chính xác cân bằng của oracle theo nhóm thuộc tính. Nhóm màu tăng ở mọi bộ; tuổi và tóc có bộ tăng có bộ giảm, vì oracle tối đa Avg chứ không tối đa mA.}
+\label{tab:gap}
+\end{table}
+
+Phần mất do ngưỡng ổn định đáng ngạc nhiên: 0.022 đến 0.024 ở cả ba bộ và ở cả hai cỡ backbone. Nó lớn hơn mọi thay đổi thiết kế ở mục~\ref{sec:sweep}, nên ai chỉ tinh chỉnh mạng sẽ không chạm được phần này. Nhóm màu áo và màu quần đóng góp nhiều nhất ở mọi bộ.
 
 \begin{figure}[H]
 \centering
@@ -192,7 +233,7 @@ Một mô hình có thể mất điểm trên miền mới vì hai lý do khác 
 \label{fig:gap}
 \end{figure}
 
-Chúng tôi đã kiểm tra giả thuyết rằng lỗi ngưỡng ở nhóm màu do camera mới làm lệch cân bằng màu. Huấn luyện với tăng cường cân bằng trắng ngẫu nhiên không làm giảm phần lỗi này. Giải thích phù hợp hơn với dữ liệu là khác biệt trong quy ước gán nhãn màu. PETA đôi khi ghi hai màu cho một chiếc áo, không có nhãn ``màu khác'', trong khi hai bộ còn lại luôn ghi đúng một màu. Nếu giải thích này đúng, phần lỗi ngưỡng không thể sửa nếu không thấy nhãn của miền đích, và mọi tham số ngưỡng được tinh chỉnh trên PETA có nguy cơ chỉ khớp quy ước của PETA.
+Chúng tôi đã kiểm tra giả thuyết rằng lỗi ngưỡng ở nhóm màu do camera mới làm lệch cân bằng màu. Huấn luyện với tăng cường cân bằng trắng ngẫu nhiên không làm tăng Avg trên PETA giấu. Một giải thích phù hợp hơn là khác biệt trong quy ước gán nhãn màu. PETA ghi hai màu cho 11,7\% số áo và 1,7\% số quần, trong khi PA100k và Market1501 gần như luôn ghi đúng một màu. Chúng tôi chưa kiểm chứng được giải thích này khi không có nhãn của miền đích. Nếu giải thích này đúng, phần lỗi ngưỡng không thể sửa nếu không thấy nhãn của miền đích, và mọi tham số ngưỡng được tinh chỉnh trên PETA có nguy cơ chỉ khớp quy ước của PETA.
 
 \subsection{Độ tin cậy của giao thức}
 \label{sec:proxytest}
@@ -288,7 +329,25 @@ ViT-L/16 & 256×128 & 128 & khoảng 180 & không chạy \\
 \begin{equation}
 h_k = q_k + \mathrm{MHA}\big(\mathrm{LN}(q_k), \mathrm{LN}(X), \mathrm{LN}(X)\big), \qquad h'_k = h_k + \mathrm{MLP}(\mathrm{LN}(h_k)), \qquad z_k = w_k^\top \mathrm{LN}(h'_k) + c_k ,
 \end{equation}
-với LN là layer normalization, MHA là multi-head attention 8 đầu, MLP có hệ số mở rộng 2, và $w_k, c_k$ là bộ phân loại riêng của thuộc tính $k$. Trong MHA, trọng số attention của truy vấn $k$ lên token $j$ tỉ lệ với $\exp(q_k^\top W_Q^\top W_K x_j/\sqrt{d_h})$. Truy vấn của thuộc tính ``mũ'' vì thế học cách gán trọng số cao cho các token ở vùng đầu. Head có một tầng và chiếm dưới 0,1\% số phép tính của backbone, nên không ảnh hưởng tới ngân sách thời gian.
+với LN là layer normalization, MHA là multi-head attention 8 đầu, MLP có hệ số mở rộng 2, và $w_k, c_k$ là bộ phân loại riêng của thuộc tính $k$. Trong MHA, trọng số attention của truy vấn $k$ lên token $j$ tỉ lệ với $\exp(q_k^\top W_Q^\top W_K x_j/\sqrt{d_h})$. Truy vấn của thuộc tính ``mũ'' vì thế có thể học cách gán trọng số cao cho các token ở vùng đầu. Head có một tầng và chiếm dưới 0,1\% số phép tính của backbone, nên không ảnh hưởng tới ngân sách thời gian.
+
+\paragraph{Head truy vấn giúp đặt ngưỡng, không giúp xếp hạng.} Phép phân rã ở mục~\ref{sec:decomp} cho thấy nên đọc lợi ích của head này cẩn thận. Trên cả hai backbone, head truy vấn tăng Avg sau ngưỡng nhưng làm AUC giảm nhẹ (Bảng~\ref{tab:head}). Lợi ích của nó vì vậy là đặt ngưỡng 0.5 tốt hơn trên miền nguồn, đúng loại lợi ích chuyển kém nhất. Tập chấm cùng chiều: ViT-B với head tuyến tính đạt 0.7775, với head truy vấn đạt 0.7750, chênh lệch nằm trong nhiễu của tập chấm.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+Backbone & Head & thô & offset × 0.6 & $\tau=0.42$ & AUC \\
+\midrule
+ViT-L 176 & tuyến tính & 0.7804 & 0.7923 & 0.7970 & 0.9118 \\
+ViT-L 176 & truy vấn & 0.7968 & 0.8033 & 0.8065 & 0.9071 \\
+ViT-B 256 & tuyến tính (2 seed) & 0.7765 & 0.7903 & 0.7910 & 0.9038 \\
+ViT-B 256 & truy vấn (2 seed) & 0.7881 & 0.7939 & 0.7944 & 0.9010 \\
+\bottomrule
+\end{tabular}
+\caption{Head tuyến tính và head truy vấn trên PETA giấu, 5 epoch. Head truy vấn thắng mọi cách đọc sau ngưỡng nhưng thua ở AUC.}
+\label{tab:head}
+\end{table}
 
 \subsection{Hàm mất mát}
 \label{sec:loss}
@@ -361,32 +420,32 @@ Mọi mô hình được tinh chỉnh với AdamW, learning rate $5\cdot10^{-5}$
 \subsection{Khảo sát head, loss và tăng cường dữ liệu}
 \label{sec:sweep}
 
-Với backbone ViT-B cố định, chúng tôi thử khoảng 35 thay đổi chia thành bốn nhóm. Nhóm kiến trúc head gồm head tuyến tính, head truy vấn 1 và 2 tầng, head kép, đọc token từ 4 tầng cuối, MixStyle~\cite{mixstyle}, MoE trên token, quét tuần tự kiểu Mamba, attention tuần tự theo nhóm, decoder 4 tầng, CNN, bộ phân loại riêng theo bộ dữ liệu, và head có tiên nghiệm không gian. Nhóm loss và cách huấn luyện gồm LP-FT~\cite{lpft}, ASL~\cite{asl}, logit adjustment~\cite{logitadj}, entropy chéo theo nhóm, cân bằng bộ dữ liệu, che nhãn nhiễu và các decoder tái tạo phụ trợ. Nhóm dữ liệu gồm tăng cường mạnh, cân bằng trắng ngẫu nhiên và lọc nhãn. Nhóm backbone gồm PE-Core~\cite{pe}, SigLIP 2~\cite{siglip2}, EUPE, TIPSv2, C-RADIOv3~\cite{radio} và ViT-L ở nhiều độ phân giải.
+Với backbone ViT-B cố định, chúng tôi thử 25 biến thể head, loss và tăng cường dữ liệu, cộng thêm một số backbone thay thế, chia thành bốn nhóm. Nhóm kiến trúc head gồm head tuyến tính, head truy vấn 1 và 2 tầng, head kép, đọc token từ 4 tầng cuối, MixStyle~\cite{mixstyle}, MoE trên token, quét tuần tự kiểu Mamba, attention tuần tự theo nhóm, decoder 4 tầng, CNN, bộ phân loại riêng theo bộ dữ liệu, và head có tiên nghiệm không gian. Nhóm loss và cách huấn luyện gồm LP-FT~\cite{lpft}, ASL~\cite{asl}, logit adjustment~\cite{logitadj}, entropy chéo theo nhóm, cân bằng bộ dữ liệu, che nhãn nhiễu và các decoder tái tạo phụ trợ. Nhóm dữ liệu gồm tăng cường mạnh, cân bằng trắng ngẫu nhiên và lọc nhãn. Nhóm backbone gồm PE-Core~\cite{pe}, SigLIP 2~\cite{siglip2}, EUPE, TIPSv2, C-RADIOv3~\cite{radio} và ViT-L ở nhiều độ phân giải.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.84\linewidth]{v2_experiments.png}
-\caption{Điểm thẩm định trên PETA giấu của khoảng 35 thay đổi. Dải xanh là mốc head truy vấn cộng trừ mức dao động giữa hai lần chạy. Chỉ các thay đổi backbone sang ViT-L (điểm xanh) vượt mốc quá ngưỡng chấp nhận 0.003.}
+\caption{Điểm thẩm định trên PETA giấu của các thay đổi trong đợt chạy cũ. Dải xanh là mốc head truy vấn cộng trừ mức dao động giữa hai lần chạy. Chỉ các thay đổi backbone sang ViT-L (điểm xanh) vượt mốc rõ rệt; không biến thể head, loss hay tăng cường nào vượt mốc quá 0.0008.}
 \label{fig:sweep}
 \end{figure}
 
-Hình~\ref{fig:sweep} cho thấy mọi thay đổi ở head, loss và tăng cường dữ liệu nằm quanh mốc hoặc thấp hơn. AUC của mọi biến thể ViT-B nằm trong khoảng 0.898 đến 0.908, trong khi ViT-L đạt 0.910 đến 0.913. Cách giải thích đơn giản nhất là mọi head đọc cùng một bộ đặc trưng. Nếu bộ đặc trưng không đủ thông tin để xếp hạng hai ảnh, không phép biến đổi nào ở head tạo ra được thông tin đó. Các thay đổi loss như ASL hay logit adjustment chủ yếu dời ngưỡng, và mục~\ref{sec:decomp} đã cho thấy phần điểm do ngưỡng không chuyển ổn định sang miền mới. Các backbone thay thế đều kém DINOv3 ở cùng kích thước, kể cả các mô hình tổng hợp nhiều thầy như C-RADIOv3-B (0.7757 trên tập chấm so với 0.7775 của DINOv3-B).
+Hình~\ref{fig:sweep} cho thấy mọi thay đổi ở head, loss và tăng cường dữ liệu nằm quanh mốc hoặc thấp hơn. AUC của mọi biến thể ViT-B nằm trong khoảng 0.898 đến 0.908, trong khi ViT-L đạt 0.910 đến 0.913. Cách giải thích đơn giản nhất là mọi head đọc cùng một bộ đặc trưng: head chỉ cân lại các đặc trưng nó nhận được, nên trên miền mới, chính đặc trưng mới giới hạn khả năng xếp hạng. Logit adjustment khi huấn luyện làm Avg sụp 0.122, phù hợp với việc độ dời của nó cộng dồn với độ dời của trọng số DeepMAR và của offset. Các backbone thay thế đều kém DINOv3 ở cùng kích thước, kể cả các mô hình tổng hợp nhiều thầy như C-RADIOv3-B (0.7757 trên tập chấm so với 0.7775 của DINOv3-B).
 
 \subsection{Tính bổ trợ giữa các mô hình thầy}
 \label{sec:comp}
 
-\paragraph{Câu hỏi.} Cần chọn mô hình ghép với DINOv3-L làm thầy. Một giả thuyết tự nhiên là ghép với mô hình mạnh nhất. Giả thuyết cạnh tranh là ghép với mô hình khác DINOv3 nhất, vì lợi ích của tổ hợp đến từ các lỗi không tương quan.
+\paragraph{Câu hỏi.} Cần chọn mô hình ghép với DINOv3-L làm thầy. Lý thuyết tổ hợp~\cite{krogh} cho biết một mô hình được ghép giúp ích qua hai đường: độ chính xác của chính nó, và mức khác biệt trong lỗi của nó so với DINOv3-L. Cần biết đường nào quan trọng hơn.
 
 \paragraph{Thiết kế.} Chúng tôi tinh chỉnh 11 mô hình nền tảng cỡ L hoặc lớn hơn trên giao thức giấu PETA với cùng công thức (3 epoch, đóng băng 8 block, head truy vấn), rồi lấy trung bình logit của DINOv3-L với từng mô hình và chấm trên PETA. Độ tương quan giữa hai mô hình được đo bằng trung bình hệ số tương quan Pearson giữa logit của chúng trên từng thuộc tính.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{complementarity.png}
-\caption{Lợi ích khi ghép DINOv3-L với từng mô hình X, chấm trên PETA giấu. Trái, lợi ích theo độ tương quan logit với DINOv3-L. Phải, lợi ích theo điểm của X khi đứng một mình. Hai mô hình học từ cặp ảnh và văn bản (xanh) cho lợi ích lớn nhất. Một bản DINOv3-L khác độ phân giải (đỏ) mạnh ngang CLIP-L khi đứng một mình nhưng cho lợi ích chưa bằng một nửa, vì tương quan quá cao (0.956).}
+\caption{Lợi ích khi ghép DINOv3-L với từng mô hình X, chấm trên PETA giấu. Trái, lợi ích theo độ tương quan logit với DINOv3-L. Phải, lợi ích theo điểm của X khi đứng một mình. Ở bảng phải, lợi ích tăng gần như đơn điệu theo độ chính xác của X. Một bản DINOv3-L khác độ phân giải (đỏ) mạnh ngang CLIP-L nhưng tương quan rất cao (0.956), nên lợi ích nhỏ hơn.}
 \label{fig:comp2}
 \end{figure}
 
-\paragraph{Kết quả.} Hình~\ref{fig:comp2} hỗ trợ giả thuyết thứ hai. DINOv3-L ở 224×112 có điểm riêng 0.8061, gần bằng CLIP-L (0.8063), nhưng khi ghép với DINOv3-L 176×96 chỉ tăng 0.0047, so với 0.0108 của CLIP-L. Tương quan logit của nó với DINOv3-L là 0.956, cao hơn hẳn mọi mô hình khác (0.78 đến 0.88). Trong nhóm có tương quan thấp, điểm riêng lẻ quyết định lợi ích. EVA02-L có tương quan thấp nhất nhưng điểm riêng chỉ 0.7702, và ghép với nó còn làm giảm điểm. Hai mô hình học từ cặp ảnh và văn bản là CLIP-L và MetaCLIP2-H~\cite{metaclip2} đứng đầu. Ghép cả ba (DINOv3-L, CLIP-L, MetaCLIP2-H) đạt 0.8137 sau dời ngưỡng và 0.8168 với quy tắc lý thuyết, AUC 0.9248, cao nhất trong mọi tổ hợp chúng tôi đo (Bảng~\ref{tab:ens}).
+\paragraph{Kết quả.} Trong 9 mô hình khác họ với DINOv3, độ chính xác riêng của mô hình được ghép dự báo gần như hoàn hảo lợi ích của cặp (Spearman 0.93, Pearson 0.95). Độ tương quan logit chỉ có tác dụng phụ âm khi đã tính tới độ chính xác: trong một hồi quy tuyến tính trên cả hai biến chuẩn hoá, độ chính xác đóng góp $+0.0048$ mỗi độ lệch chuẩn, còn độ tương quan đóng góp $-0.0015$. EVA02-L có tương quan thấp nhất nhưng điểm riêng chỉ 0.7702, và ghép với nó gần như không tăng. Một bản DINOv3-L thứ hai ở 224×112 chính xác ngang CLIP-L (0.8061 so với 0.8063) nhưng tương quan cao hơn hẳn (0.956), và chính hồi quy đó dự báo đúng mức lợi nhỏ hơn của nó (0.0047). Hệ quả thực tế là chọn mô hình chính xác nhất thuộc họ tiền huấn luyện khác: CLIP-L, rồi MetaCLIP2-H~\cite{metaclip2}. Ghép cả ba (DINOv3-L, CLIP-L, MetaCLIP2-H) đạt 0.8137 sau dời ngưỡng và 0.8168 với quy tắc $\tau$, AUC 0.9248, nhưng mức Avg này nằm trong nhiễu so với chỉ ghép CLIP-L (Bảng~\ref{tab:ens}).
 
 \begin{table}[H]
 \centering\small
@@ -414,41 +473,32 @@ Chúng tôi cũng thử thay trung bình đều bằng trọng số riêng cho t
 \subsection{Chưng cất chuyển được bao nhiêu}
 \label{sec:transfer}
 
-Tổ hợp hai thầy hơn DINOv3-L một mình 0.0108. Câu hỏi thực tế là mô hình trò, vốn có kích thước và độ phân giải của DINOv3-L 176×96, giữ được bao nhiêu phần lợi đó. Hình~\ref{fig:transfer} trả lời câu hỏi này cho hai cỡ trò.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\linewidth]{transfer.png}
-\caption{Lợi ích của tổ hợp thầy và phần chuyển được sang trò, trên PETA giấu. Trò ViT-L giữ được 0.0026 trong 0.0108 điểm lợi của tổ hợp. Trò ViT-B tăng 0.0038 so với ViT-B không chưng cất, và thêm thầy thứ ba không cải thiện trò ViT-B.}
-\label{fig:transfer}
-\end{figure}
-
-Trò ViT-L học từ hai thầy đạt 0.8059, so với 0.8033 khi không chưng cất. Như vậy trò giữ được khoảng một phần tư lợi ích của tổ hợp. Chúng tôi cần lưu ý rằng một lần chạy ViT-L không chưng cất với lịch 3 epoch đạt 0.8072. Do đó mức tăng của chưng cất trên Avg nằm trong biên độ dao động giữa các lịch huấn luyện. Thứ tăng ổn định là AUC, từ 0.907 đến 0.913 lên 0.920 đến 0.923 ở mọi cấu hình chưng cất (Bảng~\ref{tab:kd}).
+Tổ hợp hai thầy hơn DINOv3-L một mình 0.0108 với offset và 0.0068 với quy tắc $\tau$. Câu hỏi thực tế là mô hình trò, vốn có kích thước và độ phân giải của DINOv3-L 176×96, giữ được bao nhiêu phần lợi đó, và tách được tác động của thầy khỏi tác động của số epoch hay không. Bảng~\ref{tab:kd} so các trò ViT-L trong cùng một đợt chạy có lưu logit.
 
 \begin{table}[H]
 \centering\small
-\begin{tabular}{@{}llcccc@{}}
+\begin{tabular}{@{}llccccc@{}}
 \toprule
-Trò & Thầy, cấu hình & Avg × 0.6 & Avg $\tau$ 0.42 & AUC & mADM (Track 2) \\
+Trò & Thầy & epoch & thô & $\tau=0.42$ & AUC & mADM (Track 2) \\
 \midrule
-ViT-L 176 & không chưng cất, 5 epoch & 0.8033 & & 0.9071 & 0.6496 \\
-ViT-L 176 & không chưng cất, 3 epoch & 0.8072 & & 0.9128 & 0.6531 \\
-ViT-L 176 & DINOv3-L + CLIP-L, $\alpha$ 0.8, 6 epoch & 0.8059 & 0.8098 & 0.9205 & 0.6635 \\
-ViT-L 176 & DINOv3-L + CLIP-L, $\alpha$ 0.8, 10 epoch & 0.8057 & & 0.9222 & 0.6681 \\
-ViT-L 176 & DINOv3-L + MetaCLIP2-H, 10 epoch & 0.8061 & & 0.9233 & 0.6697 \\
-ViT-L 176 & 3 thầy (+ DINOv3-L 224), 6 epoch & 0.8038 & 0.8077 & 0.9194 & 0.6590 \\
-ViT-L 176 & DINOv3-L + CLIP-L, kd-mix, 20 epoch & 0.8064 & 0.8122 & 0.9230 & 0.6751 \\
+ViT-L 176 & không (2 lần chạy) & 3 & 0.7975 & 0.8079 & 0.9127 & 0.6515 \\
+ViT-L 176 & không & 5 & 0.7968 & 0.8065 & 0.9071 & 0.6496 \\
+ViT-L 176 & DINOv3-L + CLIP-L & 3 & 0.7948 & 0.8076 & 0.9184 & 0.6555 \\
+ViT-L 176 & DINOv3-L + CLIP-L & 6 & 0.7982 & 0.8098 & 0.9205 & 0.6635 \\
+ViT-L 176 & DINOv3-L + CLIP-L & 10 & 0.7980 & 0.8118 & 0.9222 & 0.6681 \\
+ViT-L 176 & DINOv3-L + MetaCLIP2-H & 10 & 0.7979 & 0.8099 & 0.9233 & 0.6697 \\
+ViT-L 176 & + DINOv3-L 224 (3 thầy) & 6 & 0.7968 & 0.8077 & 0.9194 & 0.6590 \\
 \midrule
-ViT-B 256 & không chưng cất & 0.7931 & & 0.8975 & 0.6406 \\
-ViT-B 256 & DINOv3-L + CLIP-L, kd-mix, 10 epoch & 0.7969 & 0.8024 & 0.9155 & 0.6577 \\
-ViT-B 256 & 3 thầy (+ MetaCLIP2-H), kd-mix, 10 epoch & 0.7966 & 0.8012 & 0.9165 & 0.6582 \\
+ViT-B 256$^\dagger$ & không, group CE & 5 & 0.7902 & 0.7960 & 0.8975 & 0.6406 \\
+ViT-B 256$^\dagger$ & DINOv3-L + CLIP-L, ảnh trộn & 10 & 0.7969 & 0.8024 & 0.9155 & 0.6577 \\
+ViT-B 256$^\dagger$ & + MetaCLIP2-H, ảnh trộn & 10 & 0.7966 & 0.8012 & 0.9165 & 0.6582 \\
 \bottomrule
 \end{tabular}
-\caption{Chưng cất trên PETA giấu. Chưng cất làm AUC tăng ổn định 0.007 đến 0.019, nhưng Avg sau dời ngưỡng chỉ tăng trong biên độ dao động. Thầy thứ ba giống DINOv3 (DINOv3-L 224) làm trò kém đi, còn thầy thứ ba khác kiểu (MetaCLIP2-H) không thay đổi trò ViT-B.}
+\caption{Chưng cất trên PETA giấu. Các dòng ViT-L cùng một đợt chạy và chỉ khác thầy hoặc số epoch. $^\dagger$Đợt chạy trên A100, khác số epoch, chỉ đọc theo chiều.}
 \label{tab:kd}
 \end{table}
 
-Ba quan sát rút ra từ Bảng~\ref{tab:kd}. Thứ nhất, thầy thứ ba chỉ có ích nếu nó bổ trợ. DINOv3-L 224 làm trò ViT-L kém đi 0.002, vì nó kéo mục tiêu mềm về phía DINOv3 vốn đã là backbone của trò. Thứ hai, ngay cả thầy thứ ba bổ trợ (MetaCLIP2-H) cũng không cải thiện trò ViT-B, dù tổ hợp ba thầy hơn tổ hợp hai thầy 0.0022 với quy tắc lý thuyết. Giới hạn vì vậy nằm ở sức chứa của trò. Thứ ba, chưng cất có lợi lớn hơn rõ rệt cho Track 2 (mADM tăng 0.014 đến 0.026) so với Track 1. Track 2 xếp hạng bằng log-likelihood của cả vector xác suất, nên được hưởng trực tiếp xác suất có hiệu chỉnh tốt hơn mà thầy cung cấp, trong khi Avg chỉ nhìn ở một ngưỡng.
+Bảng~\ref{tab:kd} tách được hai tác động. Ở cùng 3 epoch, chưng cất tăng AUC 0.006 nhưng giữ Avg thô và Avg $\tau$ trong nhiễu. Tác động lớn hơn nằm ở độ dài huấn luyện. Mô hình chỉ học nhãn kém đi từ 3 lên 5 epoch (AUC giảm 0.006), phù hợp với việc khớp quá vào miền nguồn, còn mô hình chưng cất tiếp tục tốt lên tới 10 epoch (AUC và Avg $\tau$ cùng tăng khoảng 0.004 so với lúc 3 epoch). Mục tiêu mềm của thầy vì vậy hoạt động như một bộ điều chuẩn, làm cho huấn luyện dài trở nên an toàn. Ở 10 epoch, trò nhỉnh hơn AUC của chính tổ hợp hai thầy (0.9222 so với 0.9203) và giữ được khoảng một nửa mức lợi $\tau$ của tổ hợp (0.0039 trên 0.0068). Thêm thầy thứ ba giống DINOv3 làm trò hơi kém đi, nhất quán với kết quả chọn thầy. Thêm MetaCLIP2-H làm thầy thứ ba không thay đổi trò ViT-B; chúng tôi chưa kiểm tra nguyên nhân. Chưng cất cả vào các ô không có nhãn của Market1501 không có tác động đo được (Avg $\tau$ 0.8057 so với 0.8055), nên chúng tôi không cho rằng thầy giúp nhờ lấp nhãn thiếu. Lợi ích của chưng cất cho Track 2 (cột mADM) lớn hơn rõ rệt; báo cáo Track 2 phân tích phần này.
 
 \subsection{Quy tắc ngưỡng}
 \label{sec:threxp}
@@ -456,11 +506,15 @@ Ba quan sát rút ra từ Bảng~\ref{tab:kd}. Thứ nhất, thầy thứ ba ch�
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{thresholds.png}
-\caption{Trái, mức tăng Avg so với ngưỡng 0.5 của hai họ quy tắc, trung bình trên 42 lần chạy giấu PETA. Quy tắc lý thuyết đạt đỉnh cao hơn và sớm hơn. Phải, chênh lệch giữa quy tắc lý thuyết $\tau=0.42$ và offset khớp × 0.6 trên từng lần chạy. Quy tắc lý thuyết thắng ở 45 trên 49 lần chạy, gồm cả hai miền giấu không dùng để chọn $\tau$.}
+\caption{Trái, mức tăng Avg so với ngưỡng 0.5 của hai họ quy tắc, trung bình trên 41 lần chạy giấu PETA; $\tau=0.42$ và $s=0.75$ được đọc từ hai đường này. Phải, chênh lệch giữa quy tắc $\tau=0.42$ và offset khớp × 0.75 trên từng lần chạy. Các lần chạy giấu Market1501 và PA100k là ngoài mẫu; lần chạy head tuyến tính giấu PA100k ($-0.097$) nằm ngoài trục.}
 \label{fig:thr}
 \end{figure}
 
-Hình~\ref{fig:thr} so hai họ quy tắc trên 49 lần chạy thẩm định với nhiều backbone, head và loss khác nhau. Trung bình trên các lần chạy giấu PETA, quy tắc lý thuyết đạt mức tăng 0.0096 ở $\tau=0.42$, so với 0.0073 của offset khớp ở hệ số tốt nhất ($s=0.75$) và 0.0071 ở hệ số đang dùng ($s=0.6$). Quan trọng hơn, quy tắc lý thuyết thắng ở cả 5 lần chạy giấu Market1501, vốn không tham gia việc chọn $\tau$. Trên tập chấm, áp quy tắc này lên đúng mô hình của bài nộp v12 nâng điểm từ 0.7896 lên 0.7912. Mức tăng 0.0016 nhỏ, nhưng cùng hướng với giao thức thẩm định và đạt được mà không thay đổi mô hình.
+\paragraph{Độ ổn định.} Vì quy tắc chỉ có một tham số và không có offset khớp theo từng thuộc tính, nó nên ít nhạy với nhiễu huấn luyện. Bảng~\ref{tab:noise} xác nhận điều này: giữa các cặp chạy lặp, cách đọc $\tau$ có độ lệch chuẩn 0.0005, so với 0.0020 của offset và 0.0030 của logit thô. Ở cặp tệ nhất, offset lệch 0.0046 còn $\tau$ chỉ lệch 0.0002.
+
+\paragraph{Trong mẫu và ngoài mẫu.} Chúng tôi chọn $\tau=0.42$ trên các lần chạy giấu PETA, nơi nó thắng hệ số offset tốt nhất ($s=0.75$) ở 36 trên 41 lần chạy. Đây là kết quả trong mẫu. Hai phép thử ngoài mẫu cho bức tranh không đồng nhất. Khi chọn cả $s$ lẫn $\tau$ trên 7 lần chạy giấu Market1501 và PA100k ($s=1.0$, $\tau=0.3$) rồi thử trên PETA, quy tắc thắng 35 trên 41 lần chạy, trung bình $+0.0026$. Khi chọn trên PETA rồi thử trên hai bộ còn lại, nó thắng cả 5 lần chạy giấu Market1501 (0.002 đến 0.006) nhưng thua cả 2 lần chạy giấu PA100k: 0.0055 với head truy vấn và 0.097 với head tuyến tính. Đây đúng là trường hợp mà phép suy dẫn loại trừ. Giấu PA100k là bỏ 81\% dữ liệu huấn luyện, tần suất $p_k$ còn lại chỉ đến từ 18,7 nghìn ảnh, và mô hình head tuyến tính trên fold này hiệu chỉnh rất kém (NLL 11,2 nats một ảnh so với 7,6 của head truy vấn). Quy tắc vì vậy chỉ nên dùng khi tiên nghiệm huấn luyện được ước lượng từ dữ liệu đại diện, như ở hệ thống nộp, vốn học trên cả ba bộ.
+
+\paragraph{Trên tập chấm.} Áp quy tắc lên đúng mô hình của v12 nâng điểm từ 0.7896 lên 0.7912. Mức tăng 0.0016 cùng hướng với giao thức thẩm định, nhưng nhỏ hơn độ lệch giữa hai bài nộp lặp trên tập chấm (0.0019, mục~\ref{sec:lb}), nên tập chấm chưa xác lập được nó.
 
 \subsection{Những gì không hiệu quả}
 \label{sec:neg}
@@ -473,13 +527,13 @@ Bảng~\ref{tab:neg} tóm tắt các hướng đã thử và bị loại ngoài 
 \toprule
 Hướng & Kết quả và lý do \\
 \midrule
-Lượng tử hoá int8 động & ViT-B val 0.885 xuống 0.703 khi lượng tử hoá mọi tầng, xuống 0.809 khi chỉ lượng tử hoá qkv và fc1. ViT-L trên PETA giấu giảm từ 0.809 xuống 0.765. Đặc trưng của DINOv3 có giá trị ngoại lai lớn ở một số kênh, nên lượng tử hoá theo tensor mất thông tin. \\
+Lượng tử hoá int8 động & ViT-B val 0.885 xuống 0.703 khi lượng tử hoá mọi tầng, xuống 0.809 khi chỉ lượng tử hoá qkv và fc1. ViT-L trên PETA giấu giảm từ 0.809 xuống 0.765. Chúng tôi chưa kiểm tra nguyên nhân. \\
 Model soup~\cite{soup} & Trung bình trọng số của các head huấn luyện với seed khác nhau làm điểm sụp xuống khoảng 0.75. Soup cùng khởi tạo chỉ ngang các thành phần trên PETA, và soup của v12 với một trò mới làm AUC trên val giảm. \\
 Chưng cất logit ViT-L sang ViT-B, chỉ nhãn cứng & Tăng 0.0017 trên giao thức thẩm định nhưng bài nộp (KD-B) đạt 0.7717, thấp hơn ViT-B không chưng cất 0.0058. \\
 Trọng số chưng cất theo độ đồng thuận của thầy & Không tăng so với trung bình đều. \\
 Chuẩn hoá logit của thầy trước khi trung bình & Không tăng. \\
 Backbone thay thế cỡ B & PE-Core, SigLIP 2, EUPE, TIPSv2, C-RADIOv3-B đều kém DINOv3-B sau tinh chỉnh. \\
-Tăng cường cân bằng trắng & Không giảm lỗi ngưỡng ở nhóm màu, ủng hộ giả thuyết quy ước gán nhãn ở mục~\ref{sec:decomp}. \\
+Tăng cường cân bằng trắng & Không tăng Avg trên PETA giấu. \\
 Thêm thầy thứ ba cho trò ViT-B & Ngang hai thầy (0.7966 so với 0.7969). \\
 \bottomrule
 \end{tabularx}
@@ -493,7 +547,7 @@ Thêm thầy thứ ba cho trò ViT-B & Ngang hai thầy (0.7966 so với 0.7969)
 
 \subsection{Lịch sử bài nộp}
 
-Hình~\ref{fig:lb} và Bảng~\ref{tab:lb} liệt kê các bài nộp theo thứ tự. Ba bước tạo ra phần lớn mức tăng. Đổi sang ViT-L 176×96 tăng 0.0082 (từ 0.7775 lên 0.7857). Chưng cất từ DINOv3-L và CLIP-L tăng thêm 0.0039 (lên 0.7896). Quy tắc ngưỡng lý thuyết tăng thêm 0.0016 (lên 0.7912). Mọi thay đổi khác trên ViT-B, kể cả head truy vấn, đều nằm trong khoảng $\pm0.003$ quanh 0.776.
+Hình~\ref{fig:lb} và Bảng~\ref{tab:lb} liệt kê các bài nộp theo thứ tự. Chỉ một cặp bài nộp đo được nhiễu trên tập chấm: v9 và v10 cùng công thức, chỉ khác việc thêm dữ liệu val, và lệch nhau 0.0019. Mức thay đổi nhỏ hơn thế không quy được cho một nguyên nhân. Theo thước đo này, đổi từ ViT-B sang ViT-L với cùng head (v8 sang v9, $+0.0107$) chắc chắn là thật, chưng cất cùng với lịch huấn luyện dài hơn (v10 sang v12, $+0.0058$) nhiều khả năng là thật, còn quy tắc ngưỡng ($+0.0016$) nhất quán với giao thức thẩm định nhưng chưa được tập chấm xác lập. Các thay đổi khác trên ViT-B đều nằm trong khoảng $\pm0.003$ quanh 0.776. Điểm baseline 2027 của ban tổ chức không công khai, nên chúng tôi không báo được khoảng cách so với baseline.
 
 \begin{figure}[H]
 \centering
@@ -541,16 +595,16 @@ Khi môi trường chấm có tốc độ dao động, một bài nộp chỉ đ
 \section{Thảo luận}
 \label{sec:disc}
 
-\paragraph{Nút thắt là backbone, sau đó là bước chuyển giao.} Khảo sát ở mục~\ref{sec:sweep} cho thấy với backbone cố định, các lựa chọn ở head, loss và tăng cường dữ liệu không thay đổi khả năng xếp hạng vượt quá nhiễu. Mức tăng thật sự đến từ hai nguồn, gồm backbone lớn hơn (ViT-L) và tín hiệu từ các mô hình lớn hơn nữa qua chưng cất. Phân tích ở mục~\ref{sec:transfer} cho thấy bước chưng cất chỉ giữ khoảng một phần tư lợi ích của tổ hợp thầy, và trò ViT-B không hấp thụ thêm khi tổ hợp thầy mạnh hơn. Hướng đáng làm tiếp vì vậy là cải thiện bước chuyển giao, ví dụ chưng cất đặc trưng mức token thay vì chỉ logit, hoặc tăng lượng ảnh không nhãn mà trò được hỏi.
+\paragraph{Nút thắt là backbone và tín hiệu huấn luyện.} Khảo sát ở mục~\ref{sec:sweep} cho thấy với backbone cố định, các lựa chọn ở head, loss và tăng cường dữ liệu không thay đổi khả năng xếp hạng vượt quá nhiễu. Mức tăng thật sự đến từ backbone lớn hơn (ViT-L) và từ tín hiệu của các mô hình lớn hơn nữa qua chưng cất. Chưng cất chủ yếu tăng AUC và cho phép huấn luyện dài hơn; ở 10 epoch, trò giữ khoảng một nửa lợi ích $\tau$ của tổ hợp thầy. Hướng đáng làm tiếp là chưng cất đặc trưng mức token thay vì chỉ logit, và thử trò chỉ một thầy để biết đóng góp của từng thầy.
 
-\paragraph{Thông tin chuyển được và thông tin không chuyển được.} Các phép đo nhất quán với một phân chia. Khả năng xếp hạng, đo bằng AUC, chuyển được từ miền nguồn sang miền mới. Vị trí ngưỡng tối ưu, gắn với quy ước gán nhãn của từng miền, thì không. Ba kết quả độc lập ủng hộ phân chia này, gồm việc proxy đoán sai đúng hai thay đổi kiểu ngưỡng, việc trọng số tổ hợp riêng theo thuộc tính không chuyển được, và việc quy tắc ngưỡng ít tham số thắng quy tắc khớp nhiều tham số. Chúng tôi coi đây là giả thuyết được hỗ trợ, chưa được chứng minh, vì chưa có phép đo trực tiếp nhãn của miền đích.
+\paragraph{Thông tin chuyển được và thông tin không chuyển được.} Các phép đo nhất quán với một phân chia. Khả năng xếp hạng, đo bằng AUC, chuyển được từ miền nguồn sang miền mới. Vị trí ngưỡng tối ưu, gắn với quy ước gán nhãn của từng miền, thì không. Bốn kết quả ủng hộ phân chia này: phần mất do ngưỡng ổn định ở khoảng 0.022 trên cả ba bộ giấu, giao thức đoán sai đúng hai thay đổi kiểu ngưỡng, trọng số tổ hợp riêng theo thuộc tính không chuyển được, và quy tắc ngưỡng ít tham số ổn định hơn quy tắc khớp nhiều tham số. Một kiểm tra đơn giản cho người làm thực tế: nếu một thay đổi tăng Avg sau ngưỡng mà không tăng AUC, nên dự đoán nó chuyển kém sang miền mới. Chúng tôi coi đây là giả thuyết được hỗ trợ, chưa được chứng minh, vì chưa có phép đo trực tiếp nhãn của miền đích.
 
-\paragraph{Giới hạn của báo cáo.} Mức nhiễu giữa các lần chạy chỉ được ước lượng từ vài cặp lần chạy lặp. Giá trị $\tau=0.42$ được chọn trên chính các lần chạy giấu PETA. Các thời gian ước lượng trên máy chấm dựa trên một số ít log, và chính các log này cho thấy tốc độ dao động gần hai lần. Cuối cùng, phần lớn kết luận dựa trên một miền giấu chính (PETA), với hai miền giấu phụ chỉ được dùng cho một số so sánh.
+\paragraph{Giới hạn của báo cáo.} Mức nhiễu giữa các lần chạy chỉ được ước lượng từ ba cặp lần chạy lặp. Giá trị $\tau=0.42$ được chọn trên chính các lần chạy giấu PETA, và quy tắc thất bại khi PA100k bị giấu. Các lần chạy thẩm định ngắn hơn các bài nộp (3 đến 10 epoch, hai bộ dữ liệu, so với 10 epoch trên cả ba bộ). Giải thích dựa trên quy ước gán nhãn màu chưa được kiểm chứng. Các thời gian ước lượng trên máy chấm dựa trên một số ít log, và chính các log này cho thấy tốc độ dao động gần hai lần. Cuối cùng, phần lớn kết luận dựa trên một miền giấu chính (PETA), với hai miền giấu phụ chỉ được dùng cho một số so sánh.
 
 %=====================================================================
 \section{Kết luận}
 
-Chúng tôi trình bày một hệ thống PAR cho miền camera chưa thấy dưới ràng buộc chỉ dùng CPU, đạt 0.7912 Challenge\_Avg trên tập chấm ẩn của UPAR Challenge 2027 Track 1. Hệ thống kết hợp backbone DINOv3 ViT-L ở độ phân giải được chọn theo ngân sách thời gian, head truy vấn, chưng cất từ hai thầy có kiểu tiền huấn luyện bổ trợ, và quy tắc dời ngưỡng suy ra từ giả thiết dịch chuyển nhãn. Các thí nghiệm có kiểm soát cho thấy thứ quyết định kết quả là khả năng xếp hạng của đặc trưng, còn các tham số được khớp trên miền nguồn, dù là ngưỡng hay trọng số tổ hợp, ít chuyển được sang miền mới. Về vận hành, độ dao động tốc độ của máy chấm buộc hệ thống phải được thiết kế cho trường hợp chậm nhất, và cơ chế dự phòng trả về kết quả kém có hại hơn một lần chạy thất bại.
+Trên camera chưa thấy, nhận dạng thuộc tính người đi bộ mất khoảng 0.022 điểm vì vị trí ngưỡng mà dữ liệu nguồn không sửa được, phần còn lại là vấn đề xếp hạng mà chỉ backbone và tín hiệu huấn luyện giải quyết được. Thiết kế theo phân chia này dẫn chúng tôi tới DINOv3 ViT-L ở độ phân giải giảm, chưng cất từ hai thầy chính xác thuộc hai họ tiền huấn luyện khác nhau, và một phép điều chỉnh logit một hệ số ổn định giữa các lần chạy nhưng chỉ nên dùng với tiên nghiệm đại diện. Hệ thống đạt 0.7912 Challenge\_Avg trên tập chấm ẩn của UPAR Challenge 2027 Track 1. Về vận hành, độ dao động tốc độ của máy chấm buộc hệ thống phải được thiết kế cho trường hợp chậm nhất, và cơ chế dự phòng trả về kết quả kém có hại hơn một lần chạy thất bại.
 
 %=====================================================================
 \begin{thebibliography}{99}\small
@@ -583,6 +637,7 @@ Chúng tôi trình bày một hệ thống PAR cho miền camera chưa thấy d�
 \bibitem{mixstyle} K.~Zhou, Y.~Yang, Y.~Qiao, T.~Xiang. Domain generalization with MixStyle. \textit{ICLR}, 2021.
 \bibitem{lpft} A.~Kumar, A.~Raghunathan, R.~Jones, T.~Ma, P.~Liang. Fine-tuning can distort pretrained features and underperform out-of-distribution. \textit{ICLR}, 2022.
 \bibitem{asl} T.~Ridnik, E.~Ben-Baruch, N.~Zamir và cộng sự. Asymmetric loss for multi-label classification. \textit{ICCV}, 2021.
+\bibitem{krogh} A.~Krogh, J.~Vedelsby. Neural network ensembles, cross validation, and active learning. \textit{NeurIPS}, 1995.
 \bibitem{soup} M.~Wortsman, G.~Ilharco, S.~Y.~Gadre và cộng sự. Model soups: Averaging weights of multiple fine-tuned models improves accuracy without increasing inference time. \textit{ICML}, 2022.
 \end{thebibliography}
 
