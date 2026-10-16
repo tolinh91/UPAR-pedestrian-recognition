@@ -1,0 +1,111 @@
+<div class="wrap" id="app">
+<header>
+  <div class="eyebrow">UPAR 2027 · Track 1 · bản nộp v31 · leaderboard 0,8001</div>
+  <h1>Joint Query v31</h1>
+  <p class="lede">Trang này cho một ảnh thật (PETA 11178) đi qua đúng mô hình đã nộp ở v31. Hai backbone <b class="hp-t">H+</b> và <b class="cl-t">CLIP</b> được train chung. Ngoài head riêng của mỗi backbone, mô hình có thêm một <b class="jt-t">query chung</b> đọc token của cả hai. Các bản đồ attention, token và logit trên trang đều được đo từ trọng số của v31. Chọn chế độ Suy luận hoặc Huấn luyện, rồi bấm Chạy hoặc đi từng bước.</p>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Chế độ">
+      <button id="m-inf" aria-pressed="true">Suy luận</button>
+      <button id="m-train" aria-pressed="false">Huấn luyện</button>
+    </div>
+    <button class="btn" id="play">▶ Chạy</button>
+    <button class="btn" id="prev" aria-label="Bước trước">◀</button>
+    <button class="btn" id="next" aria-label="Bước sau">▶▶</button>
+    <div class="steps" id="steps"></div>
+  </div>
+</header>
+
+<section class="stage" aria-label="Sơ đồ kiến trúc">
+  <div class="legend">
+    <span style="--c:var(--hplus)">nhánh H+ (DINOv3 ViT-H+/16)</span>
+    <span style="--c:var(--clip)">nhánh CLIP (ViT-L/14)</span>
+    <span style="--c:var(--joint)">query chung</span>
+    <span style="--c:var(--frozen)">khối đóng băng</span>
+    <span class="trainonly" style="--c:var(--grad)">gradient</span>
+  </div>
+  <div class="svgbox"><svg id="dg" viewBox="0 0 1560 620" role="img" aria-label="Luồng một ảnh qua hai backbone và ba head của v31"></svg></div>
+  <div class="caption"><span class="num" id="capn">1/6</span><p id="capt"></p></div>
+</section>
+
+<section class="panel" id="qhsec">
+  <h2>Bên trong một query head</h2>
+  <p class="sub">Ba head của v31 dùng cùng một kiến trúc và chỉ khác nhau ở token đầu vào. Chọn một head và một thuộc tính để xem bản đồ attention và các con số của ảnh PETA 11178.</p>
+  <div class="controls" style="margin-bottom:6px">
+    <div class="seg" role="group" aria-label="Chọn head">
+      <button data-k="h" aria-pressed="true">Head H+</button>
+      <button data-k="c" aria-pressed="false">Head CLIP + chữ</button>
+      <button data-k="j" aria-pressed="false">Query chung</button>
+    </div>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="svgbox"><svg id="qh" viewBox="0 0 1500 470" role="img" aria-label="Sơ đồ bên trong một query head"></svg></div>
+  <ol class="qhlist" id="qhlist"></ol>
+  <div class="qsub">
+    <h3>40 query được thiết kế thế nào</h3>
+    <p class="sub" id="qintro"></p>
+    <div class="qgrid">
+      <div style="min-width:0">
+        <div class="math" id="qeq"></div>
+        <ol class="qhlist" id="qfacts"></ol>
+      </div>
+      <div class="qcanv">
+        <figure><canvas id="qmat"></canvas><figcaption id="qmat-cap"></figcaption></figure>
+        <figure><canvas id="qcos"></canvas><figcaption id="qcos-cap"></figcaption></figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="losssec">
+  <h2>Loss lúc huấn luyện và đầu ra lúc suy luận</h2>
+  <p class="sub" id="loss-sub"></p>
+  <div class="grid2">
+    <div style="min-width:0">
+      <h3>Huấn luyện: loss của mỗi head</h3>
+      <ol class="drv" id="loss-steps"></ol>
+      <div class="tablebox" style="margin-top:10px"><table id="loss-table"></table></div>
+      <div id="loss-total" style="margin:10px 0 0"></div>
+    </div>
+    <div style="min-width:0">
+      <h3>Suy luận: đầu ra</h3>
+      <ol class="drv" id="inf-steps"></ol>
+    </div>
+  </div>
+</section>
+
+<section class="grid2">
+  <div class="panel">
+    <h2>Mỗi head nhìn vào đâu</h2>
+    <p class="sub">Bốn bản đồ là trọng số attention của query ứng với thuộc tính đang chọn, lấy trung bình trên 8 đầu attention. Màu xanh là token của H+, màu cam là token của CLIP.</p>
+    <div class="maps">
+      <div class="map"><canvas id="cv-h" width="112" height="224"></canvas><b>Head H+</b><span>99 token</span></div>
+      <div class="map"><canvas id="cv-c" width="112" height="224"></canvas><b>Head CLIP</b><span>129 token</span></div>
+      <div class="map"><canvas id="cv-jh" width="112" height="224"></canvas><b>Query chung · phần H+</b><span id="jh-share"></span></div>
+      <div class="map"><canvas id="cv-jc" width="112" height="224"></canvas><b>Query chung · phần CLIP</b><span id="jc-share"></span></div>
+    </div>
+    <div class="bars" id="bars"></div>
+  </div>
+  <div class="panel">
+    <h2>40 thuộc tính của ảnh này</h2>
+    <p class="sub">Mỗi thanh là xác suất cuối của một thuộc tính, tính bằng sigmoid của trung bình ba logit. Vạch giữa là ngưỡng 0,5 dùng chung cho mọi thuộc tính. Dấu ✓ cho biết quyết định khớp với nhãn thật.</p>
+    <div class="attrs" id="attrs"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Huấn luyện và suy luận khác nhau ở đâu</h2>
+  <div class="tablebox"><table>
+    <thead><tr><th>Phần</th><th>Lúc huấn luyện</th><th>Lúc suy luận (gói nộp)</th></tr></thead>
+    <tbody>
+      <tr><td>Dữ liệu vào</td><td>Mỗi batch có 64 ảnh lấy từ train và val của PA100k, Market và PETA (131.076 ảnh). Mỗi dataset được lấy mẫu tỉ lệ với N<sup>0,5</sup>. Mô hình được train 3 epoch.</td><td>Từng ảnh test được đổi kích thước về 224×112. Không lật ảnh và không dùng TTA.</td></tr>
+      <tr><td>Tăng cường</td><td>Giảm độ phân giải (xác suất 30%), lật ngang, đệm 10 pixel rồi cắt, đổi độ sáng, độ tương phản và độ bão hoà (giữ nguyên hue), làm mờ, xoá một vùng.</td><td>Không tăng cường.</td></tr>
+      <tr><td>Backbone</td><td>Patch embedding và 8 khối đầu của mỗi backbone được đóng băng (312 triệu tham số). Các khối còn lại được fine-tune với learning rate 5e-5 ở khối cuối, giảm 0,75 lần qua mỗi khối xuống dưới. Dùng gradient checkpointing để vừa bộ nhớ.</td><td>Dùng trọng số EMA (hệ số 0,9995) ở bf16. Hai backbone chạy trên cùng một ảnh.</td></tr>
+      <tr><td>Head</td><td>Ba head học cùng lúc gồm head H+, head CLIP (có thêm phần chữ) và query chung đọc 228 token. Learning rate của head gấp 10 lần backbone.</td><td>Ba head chạy song song. Query chung chỉ thêm 8,5 triệu tham số trên tổng 1,18 tỉ tham số.</td></tr>
+      <tr><td>Loss / quyết định</td><td>Tổng của ba loss BCE. Mỗi loss dùng logit adjustment với τ = 0,32, trọng số DeepMAR, label smoothing 0,05 và bỏ qua ô không có nhãn.</td><td>Lấy trung bình ba logit, qua sigmoid, rồi so với ngưỡng 0,5. Không có offset hay ngưỡng riêng.</td></tr>
+      <tr><td>Kích thước, tốc độ</td><td>Khoảng 110 ảnh/s trên một RTX 5090. Bản final mất khoảng 1 giờ.</td><td>Gói nặng 2,36 GB và chạy 3,04 ms/ảnh trên RTX 5090. v30 cần 3,43 ms/ảnh.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<p class="foot">Mọi số liệu trên trang lấy từ trọng số <span class="mono">du.pt</span> của gói <span class="mono">t1_dual_joint_gpu_v31.zip</span>, chạy trên ảnh <span class="mono">PETA/images/11178.png</span> (dòng 30465 của split val). Bản final được train cả trên split val, nên mô hình đã thấy ảnh này. Vì vậy trang chỉ dùng để minh hoạ luồng tính toán, không dùng để đánh giá độ chính xác. Trên các fold giữ ngoài, trung bình ba head hơn v30 0,0009 điểm (PETA 0,8255 so với 0,8245, Market 0,8637 so với 0,8630). Trên leaderboard, v31 đạt 0,8001 và v30 đạt 0,7989.</p>
+</div>

@@ -10,6 +10,7 @@ Components are chosen by name (see upar/losses.py and upar/models/heads.py):
   python train.py --list                                               # show registered losses / heads
 """
 import argparse
+import random
 import json
 import math
 import os
@@ -23,7 +24,7 @@ from timm.utils import ModelEmaV3
 from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
 from upar.data import UPARDataset, build_transforms, invalid_mask, load_split
-from upar.losses import LOSSES, build_loss, distill_bce, group_ce
+from upar.losses import LOSSES, build_loss, distill_bce, group_ce, soft_challenge, pairwise_attribute_rank
 from upar.metrics import challenge_metrics, fmt
 from upar.models import HEADS, build_model, cfg_from_checkpoint
 from upar.registry import parse_kv
@@ -52,12 +53,22 @@ def get_args(argv=None):
     g.add_argument("--aux-rec-weight", type=float, default=0.2)
     g.add_argument("--moe-aux", type=float, default=0.01, help="weight of the MoE load-balancing loss")
     g.add_argument("--group-ce", type=float, default=0.0, help="weight of the one-of-K group cross-entropy term")
+    g.add_argument("--soft-metric", type=float, default=0.0,
+                   help="weight of the differentiable Track 1 Challenge_Avg surrogate")
+    g.add_argument("--soft-metric-tau", type=float, default=0.42,
+                   help="source-prior decision shift multiplier for --soft-metric")
+    g.add_argument("--soft-metric-temperature", type=float, default=1.0)
+    g.add_argument("--attr-rank", type=float, default=0.0,
+                   help="weight of pairwise per-attribute ranking loss across the batch")
     g = ap.add_argument_group("distillation")
     g.add_argument("--teacher", default=None, help="teacher checkpoint (best.pt / last.pt of a bigger model)")
     g.add_argument("--kd-alpha", type=float, default=0.5, help="loss = (1-a) * label loss + a * distillation loss")
     g.add_argument("--kd-T", type=float, default=1.0, help="distillation temperature")
     g = ap.add_argument_group("optimisation")
     g.add_argument("--epochs", type=int, default=10)
+    g.add_argument("--seed", type=int, default=42, help="random seed for paired ablations")
+    g.add_argument("--init-checkpoint", default=None,
+                   help="start a fresh run from the model weights in an existing checkpoint")
     g.add_argument("--bs", type=int, default=64)
     g.add_argument("--lr", type=float, default=5e-5, help="lr of the last backbone block")
     g.add_argument("--head-lr-mult", type=float, default=10.0)
@@ -188,7 +199,8 @@ def load_teacher(path, student_cfg):
     return teacher
 
 
-def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, dtype, step, teacher=None, aux_dec=None):
+def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, dtype, step, teacher=None, aux_dec=None,
+                    rule_shift=None):
     from upar.models.heads import MoEFFN
     moe_modules = [m for m in model.modules() if isinstance(m, MoEFFN)]
     model.train(); t0 = time.time(); run = torch.zeros((), device="cuda")
@@ -209,6 +221,11 @@ def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, d
         loss = loss_fn(logits.float(), y, v)
         if args.group_ce:
             loss = loss + args.group_ce * group_ce(logits, y, v)
+        if args.soft_metric:
+            loss = loss + args.soft_metric * soft_challenge(
+                logits, y, v, rule_shift, args.soft_metric_temperature)
+        if args.attr_rank:
+            loss = loss + args.attr_rank * pairwise_attribute_rank(logits, y, v)
         if aux_dec is not None:
             loss = loss + args.aux_rec_weight * rec.float()
         aux = [m.last_aux for m in moe_modules if m.last_aux is not None]
@@ -245,6 +262,10 @@ def main():
     args = get_args()
     if args.list:
         print("losses:", LOSSES.names()); print("heads:", HEADS.names()); return
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
     json.dump(vars(args), open(out / "args.json", "w"), indent=2)
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -258,7 +279,16 @@ def main():
         from upar.data import DOMAINS
         trained = [i for i, d in enumerate(DOMAINS) if d != args.holdout]
         args.head_kw = dict(args.head_kw, n_domains=len(DOMAINS), avg_domains=trained)
-    model = build_model(model_cfg(args)).cuda()
+    model = build_model(model_cfg(args), pretrained=args.init_checkpoint is None).cuda()
+    if args.init_checkpoint:
+        initial = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)
+        initial_cfg = cfg_from_checkpoint(initial)
+        for k in ("backbone", "size", "head", "head_kw", "multi_layer"):
+            if initial_cfg.get(k, model_cfg(args).get(k)) != model_cfg(args).get(k):
+                raise ValueError(f"init checkpoint {k} differs: {initial_cfg.get(k)} != {model_cfg(args).get(k)}")
+        model.load_state_dict(initial["model"])
+        del initial
+        print(f"initialised from {args.init_checkpoint}", flush=True)
     dcfg = timm.data.resolve_data_config({}, model=model.backbone)  # input normalisation of the pretraining
     args.mean, args.std = list(dcfg["mean"]), list(dcfg["std"])
     print(f"input normalisation mean {args.mean} std {args.std}", flush=True)
@@ -270,6 +300,10 @@ def main():
     if args.grad_ckpt:
         model.backbone.set_grad_checkpointing(True)
     loss_fn = build_loss(args.loss, prior, **args.loss_kw).cuda()
+    rule_shift = None
+    if args.soft_metric:
+        p = torch.as_tensor(prior, dtype=torch.float32, device="cuda").clamp(1e-4, 1 - 1e-4)
+        rule_shift = args.soft_metric_tau * (torch.log((1 - p) / p) - (1 - 2 * p))
     ema = ModelEmaV3(model, decay=args.ema)
     if args.compile:  # in place: parameter names, EMA and checkpoints are unchanged
         model.compile()
@@ -301,7 +335,8 @@ def main():
             for p in trainable:
                 p.requires_grad_(ep >= args.lp_epochs)
             print(f"epoch {ep}: {'head only (LP)' if ep < args.lp_epochs else 'full fine-tuning'}", flush=True)
-        step = train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, train_dl, args, dtype, step, teacher, aux_dec)
+        step = train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, train_dl, args, dtype, step,
+                               teacher, aux_dec, rule_shift)
         m, logits, idx = evaluate(ep, ema.module, val_ds, val_dl, dtype, t0)
         ck = {"model": ema.module.state_dict(), "model_cfg": model_cfg(args), "args": vars(args), "epoch": ep, "val": m}
         torch.save(ck, out / "last.pt")

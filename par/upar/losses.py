@@ -128,3 +128,45 @@ def group_ce(logits, labels, valid, groups=ONE_HOT_GROUPS):
             total = total + F.cross_entropy(logits[ok][:, idx].float(), y[ok].argmax(1), reduction="sum")
             n += int(ok.sum())
     return total / max(n, 1)
+
+
+def soft_challenge(logits, labels, valid, shift, temperature=1.0):
+    """Differentiable surrogate of Track 1's harmonic mean of mA and instance F1.
+
+    The training-only threshold shift is computed from source-domain priors. A
+    smooth sigmoid stands in for the discrete prediction used by the scorer.
+    Invalid/absent attributes are excluded from the corresponding average.
+    """
+    prob = torch.sigmoid((logits.float() + shift) / temperature)
+    y, v = labels.float(), valid.float()
+    pos, neg = (y * v).sum(0), ((1 - y) * v).sum(0)
+    tpr = (prob * y * v).sum(0) / pos.clamp_min(1)
+    tnr = ((1 - prob) * (1 - y) * v).sum(0) / neg.clamp_min(1)
+    present = (pos > 0) & (neg > 0)
+    ma = ((tpr + tnr) / 2)[present].mean() if present.any() else prob.new_tensor(0.5)
+
+    tp = (prob * y * v).sum(1)
+    f1 = (2 * tp + 1e-6) / ((prob * v).sum(1) + (y * v).sum(1) + 1e-6)
+    valid_rows = v.sum(1) > 0
+    inst_f1 = f1[valid_rows].mean() if valid_rows.any() else prob.new_tensor(0.0)
+    challenge = 2 * ma * inst_f1 / (ma + inst_f1).clamp_min(1e-6)
+    return 1 - challenge
+
+
+def pairwise_attribute_rank(logits, labels, valid, temperature=1.0):
+    """Rank annotated positive images ahead of negative images per attribute.
+
+    Each pair is within the training batch. Attributes with no valid pair do
+    not contribute; this term can improve ranking but cannot learn new-domain
+    decision thresholds.
+    """
+    z = logits.float() / temperature
+    y = labels > 0.5
+    v = valid > 0.5
+    positive, negative = (y & v), (~y & v)
+    mask = positive[:, None, :] & negative[None, :, :]
+    diff = z[:, None, :] - z[None, :, :]
+    errors = F.softplus(-diff)
+    if not mask.any():
+        return z.sum() * 0
+    return errors.masked_select(mask).mean()
