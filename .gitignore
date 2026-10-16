@@ -273,3 +273,7 @@ par/upar/models/radio_nv/*.py
 report/xai/xai_data.json
 report/xai/attention.html
 report/xai/occlusion.json
+
+# LaTeX back-reference files and rendered page previews
+*.brf
+report/**/preview/
