@@ -33,7 +33,7 @@ Pedestrian attribute recognition must work on cameras that are absent from train
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\linewidth]{arch.pdf}
-\caption{The joint model on one PETA image. Both encoders are fine-tuned in one model, with the hatched blocks frozen. Besides the query head of each encoder, a joint query head attends to the tokens of both encoders after a linear map $W$ to a shared width. Inside each head box, the image shows where the ``hat'' query of that head attends, and the circles give the three hat logits that are averaged at test time. Token colors are the first three principal components of the patch tokens. All values come from the submitted weights.}
+\caption{The joint model on one PETA image. Both encoders are fine-tuned in one model, and the first eight blocks of each (hatched) are frozen. Token colors are the first three principal components of the patch tokens. Besides the query head of each encoder, a joint query head attends to the tokens of both encoders after a linear map $W$ to a shared width. The circles give the three logits of the ``hat'' query. Their average goes through a sigmoid, and the panel on the right shows the resulting probabilities for the seven most likely attributes and two absent ones, all of which match the ground truth. All values come from the submitted weights.}
 \label{fig:arch}
 \end{figure*}
 
@@ -170,7 +170,7 @@ All three heads averaged (ours) & \textbf{82.55} & 86.37 & \textbf{84.46} \\
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\linewidth]{routing.pdf}
-\caption{Routing inside the joint head on the image of \cref{fig:arch}. (a) Attention of three joint queries, shown separately for each of the eight attention heads. Each head is drawn on the patch grid of the encoder it reads, and its number is colored by that encoder. (b) Share of attention that each attention head puts on H+ tokens, for all 40 attributes. Blue cells read H+, orange cells read CLIP, and pale cells mix both. The right column counts the heads that read H+. The attributes of (a) are in bold.}
+\caption{Routing inside the joint head on the image of \cref{fig:arch}. (a) For three attribute queries, the summed attention of the heads that read H+ (blue) and of the heads that read CLIP (orange), each on the patch grid of its encoder. (b) Share of attention that each of the eight attention heads puts on H+ tokens, for all 40 attributes. Blue cells read H+, orange cells read CLIP, and pale cells mix both. The numbers on top count the heads that read H+, black lines separate attribute groups, and the attributes of (a) are in bold.}
 \label{fig:routing}
 \end{figure*}
 
@@ -236,7 +236,7 @@ Runs (e)--(g) change the joint head itself. They add mid-level tokens, initializ
 \label{sec:routing}
 
 
-\Cref{fig:routing} opens the joint head on the image of \cref{fig:arch}. Each attention head could mix the tokens of both encoders, but it almost never does. Of the 320 pairs of attention head and attribute, 312 put more than 99\% of their weight on one encoder, and the other eight put at least 71\% (\cref{fig:routing}b). The encoder that a head reads is not fixed. It changes with the attribute, and three to six of the eight heads read H+ depending on the attribute. In \cref{fig:routing}a, four H+ heads look at the top of the head for the hat, and the CLIP heads look at the face just below it. For the upper white attribute, the H+ heads look at the jacket, while the CLIP heads look at a few tokens on the image border, where vision transformers tend to store global image information~\cite{registers}. For the lower black attribute, both encoders are read on the legs and hips. Each attribute thus splits its attention between the two encoders in its own proportion, which is the mechanism behind \cref{fig:pick}.
+\Cref{fig:routing} opens the joint head on the image of \cref{fig:arch}. Each attention head could mix the tokens of both encoders, but it almost never does. Of the 320 pairs of attention head and attribute, 312 put more than 99\% of their weight on one encoder, and the other eight put at least 71\% (\cref{fig:routing}b). The encoder that a head reads is not fixed. It changes with the attribute, and three to six of the eight heads read H+ depending on the attribute. In \cref{fig:routing}a, the H+ heads of the hat query look at the top of the head, and its CLIP heads look at the face and shoulder just below it. For the upper white attribute, the H+ heads look at the jacket, while the CLIP heads look at a few tokens on the image border, where vision transformers tend to store global image information~\cite{registers}. For the lower black attribute, both encoders are read on the legs and hips. Each attribute thus splits its attention between the two encoders in its own proportion, which is the mechanism behind \cref{fig:pick}.
 
 The joint head also spreads its attention more than the H+ head. Over 512 PETA validation images, a colour query of the H+ head puts 0.88 of its attention on its strongest token on average, against 0.67 for the joint head. Wider attention alone does not explain the gain, since forcing it in run (g) did not help.
 
