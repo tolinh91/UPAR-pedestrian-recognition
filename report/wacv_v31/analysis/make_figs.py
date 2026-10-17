@@ -3,9 +3,13 @@ PETA val image 11178 by report/v31_arch/export.py) and saved held-out logits (an
 
 ../../../Upar-Challenge-Track-2/.venv/bin/python make_figs.py
 figs/arch.pdf     the model on this image: encoders, PCA of the tokens, three query heads, hat logits, final predictions
-figs/pick.pdf     per attribute: joint head vs the two member heads (balanced accuracy)
-figs/routing.pdf  (a) where the H+ / CLIP attention heads of the joint query look, (b) encoder share of every head, 40 attributes
+figs/pick.pdf     per attribute: gain of the joint query head over the mean of the two single-encoder query heads,
+                  against their gap (all 148 points shown; bin means with 95% bootstrap intervals over attribute-fold units)
+figs/routing.pdf  (a) where the DINOv3 / CLIP attention heads of the joint query head look, drawn as token cells (no smoothing),
+                  (b) encoder share of every attention head, 40 attributes
 Everything is vector except the photographs, which are resampled once from the raw crop with Lanczos at 8x.
+Colors: DINOv3 blue / CLIP orange (distinct for common color-vision deficiencies), datasets by Okabe-Ito green / reddish
+purple plus marker shape (scientific-visualization skill, K-Dense, MIT).
 """
 import base64
 import io
@@ -38,14 +42,22 @@ PHOTO = np.asarray(decode(D["raw"]).resize((112 * 8, 224 * 8), Image.LANCZOS), f
 H_IMG, W_IMG = PHOTO.shape[:2]
 
 
-def heat(vals, rows, cols, color, gamma=.55, amax=.88):
-    """Photo in light grey with an attention map (rows x cols tokens) upsampled bicubically and tinted in color."""
-    g = PHOTO @ np.array([.299, .587, .114])
-    base = np.repeat((.42 + .55 * g)[..., None], 3, -1)
+GREY = np.repeat((.42 + .55 * (PHOTO @ np.array([.299, .587, .114])))[..., None], 3, -1)
+
+
+def heat(axi, vals, rows, cols, color, gamma=.6, amax=.85):
+    """Photo in light grey, one tinted cell per token (no smoothing: the map has only rows x cols values)."""
+    axi.imshow(GREY, extent=(0, cols, rows, 0), interpolation="none")
     v = np.asarray(vals, float).reshape(rows, cols); v = v / max(v.max(), 1e-9)
-    up = np.asarray(Image.fromarray(v.astype(np.float32), mode="F").resize((W_IMG, H_IMG), Image.BICUBIC)).clip(0, 1)
-    a = (up ** gamma * amax)[..., None]
-    return base * (1 - a) + np.array(matplotlib.colors.to_rgb(color)) * a
+    for r in range(rows):
+        for k in range(cols):
+            if v[r, k] > .02:
+                axi.add_patch(Rectangle((k, r), 1, 1, fc=color, ec="none", alpha=float(v[r, k] ** gamma * amax), zorder=2))
+    for r in range(1, rows):
+        axi.axhline(r, color="white", lw=.2, alpha=.35, zorder=3)
+    for k in range(1, cols):
+        axi.axvline(k, color="white", lw=.2, alpha=.35, zorder=3)
+    axi.set_xlim(0, cols); axi.set_ylim(rows, 0)
 
 
 def rbox(ax, x, y, w, h, ec, fc, lw=.9, ls="-", r=6):
@@ -58,13 +70,14 @@ def arrow(ax, x0, y0, x1, y1, color=MUTE, rad=0.0, lw=.8):
                                 connectionstyle=f"arc3,rad={rad}"))
 
 
-def tokens(ax, rgb, cols, rows, x0, y0, cell, ec):
-    """PCA colours of the patch tokens as vector cells, row 0 at the top."""
+def tokens(ax, rgb, cols, rows, x0, y0, w, h, ec):
+    """PCA colors of the patch tokens as seamless vector cells (one cell = one token), row 0 at the top."""
     c = np.asarray(rgb, float).reshape(rows, cols, 3) / 255
+    cw, ch = w / cols, h / rows
     for r in range(rows):
         for k in range(cols):
-            ax.add_patch(Rectangle((x0 + k * cell, y0 + (rows - 1 - r) * cell), cell, cell, fc=c[r, k], ec="white", lw=.15, zorder=2))
-    ax.add_patch(Rectangle((x0, y0), cols * cell, rows * cell, fill=False, ec=ec, lw=.9, zorder=3))
+            ax.add_patch(Rectangle((x0 + k * cw, y0 + (rows - 1 - r) * ch), cw, ch, fc=c[r, k], ec=c[r, k], lw=.25, zorder=2))
+    ax.add_patch(Rectangle((x0, y0), w, h, fill=False, ec=ec, lw=.9, zorder=3))
 
 
 def short(a):
@@ -76,93 +89,199 @@ def short(a):
     return a.lower()
 
 
-# ================================================================ Figure 1: the joint model on one image (units: 1/100 inch)
+# ================================================================ Figure 1: (a) the joint model, (b) one query head
+# Block style of the DeepSeek-V3/V4 figures (user choice, v25 deck): yellow = module, grey = operation, white + lock =
+# frozen, token stacks = rows of circles, residual adds, dashed = training only. Real parts: the input crop, the "hat"
+# logits of the three query heads and the final probability of the submitted weights. Units: 1/100 inch.
+YEL, GRY, LINE = "#F8E6BC", "#E1E6EB", "#2B3A4E"
+QCOLS = ["#F0A868", "#8FC1E3", "#C9B6E4", "#9FD3B5", "#F2C4CE"]      # five of the 40 attribute queries
+
+
+def blk(ax, x0, y0, x1, y1, text, sub=None, kind="main", color=INK, bold=False, fs=7.2):
+    fc = {"main": YEL, "op": GRY, "frozen": "white"}[kind]
+    ax.add_patch(FancyBboxPatch((x0, y0), x1 - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=4", fc=fc, ec=LINE,
+                                lw=.75, zorder=2))
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    if sub:
+        ax.text(cx, cy + 4.6, text, ha="center", va="center", fontsize=fs, color=color, weight="bold" if bold else "normal", zorder=3)
+        ax.text(cx, cy - 5.4, sub, ha="center", va="center", fontsize=6.5, color=MUTE, zorder=3)
+    else:
+        ax.text(cx, cy, text, ha="center", va="center", fontsize=fs, color=color, weight="bold" if bold else "normal", zorder=3)
+
+
+def stack(ax, cx, cy, fills, layers=3):
+    """Token stack: a row of circles in a rounded frame, two frames behind it (many tokens / vectors)."""
+    n = len(fills); w, h = n * 8.4 + 4, 10
+    for L in range(layers - 1, -1, -1):
+        x0, y0 = cx - w / 2 - 1.8 * L, cy - h / 2 + 1.8 * L
+        ax.add_patch(FancyBboxPatch((x0, y0), w, h, boxstyle="round,pad=0,rounding_size=3", fc="white", ec=LINE, lw=.6, zorder=2))
+        for i in range(n):
+            ax.add_patch(plt.Circle((x0 + 6.2 + 8.4 * i, y0 + h / 2), 2.9, fc=fills[i] if L == 0 and fills[i] else "white",
+                                    ec=LINE, lw=.55, zorder=3))
+    return cx - w / 2 - 3.6, cy - h / 2, cx + w / 2, cy + h / 2 + 3.6      # visual box
+
+
+def path(ax, pts, dashed=False, color=LINE, head=True, lw=.8):
+    xs, ys = zip(*pts)
+    ls = (0, (3, 2)) if dashed else "-"
+    if len(pts) > 2:
+        ax.plot(xs[:-1], ys[:-1], color=color, lw=lw, ls=ls, solid_capstyle="butt", zorder=1)
+    ax.annotate("", xy=pts[-1], xytext=pts[-2], zorder=1,
+                arrowprops=dict(arrowstyle="-|>" if head else "-", color=color, lw=lw, ls=ls, shrinkA=0, shrinkB=0,
+                                mutation_scale=6))
+
+
+def plus(ax, cx, cy, r=5):
+    ax.add_patch(plt.Circle((cx, cy), r, fc="white", ec=LINE, lw=.8, zorder=3))
+    ax.plot([cx - r, cx + r], [cy, cy], color=LINE, lw=.8, zorder=4); ax.plot([cx, cx], [cy - r, cy + r], color=LINE, lw=.8, zorder=4)
+
+
+def lock(ax, cx, cy, s=1.0):
+    ax.add_patch(Rectangle((cx - 3.2 * s, cy - 2.6 * s), 6.4 * s, 5.0 * s, fc=MUTE, ec="none", zorder=4))
+    ax.add_patch(matplotlib.patches.Arc((cx, cy + 2.4 * s), 4.2 * s, 6.0 * s, theta1=0, theta2=180, color=MUTE, lw=1.0, zorder=4))
+
+
 k = A.index("Accessory-Hat")
-fig = plt.figure(figsize=(7.0, 3.0))
-ax = fig.add_axes([0, 0, 1, 1]); ax.set_xlim(0, 700); ax.set_ylim(0, 300); ax.axis("off")
-# input
-ax.imshow(PHOTO, extent=(6, 81, 72, 222), zorder=2, interpolation="none")
-ax.add_patch(Rectangle((6, 72), 75, 150, fill=False, ec=MUTE, lw=.6, zorder=3))
-ax.text(43.5, 64, "input", ha="center", va="top", fontsize=8)
-ax.text(43.5, 52, "224 × 112", ha="center", va="top", fontsize=7.5, color=MUTE)
-arrow(ax, 83, 190, 102, 234, rad=-.3); arrow(ax, 83, 104, 102, 66, rad=.3)
-# encoders: a strip of transformer blocks, the first 8 frozen (hatched)
-for (y0, ec, fc, name, size, n) in [(196, HP, HP_BG, "DINOv3 ViT-H+/16", "840M", 32), (28, CL, CL_BG, "CLIP ViT-L/14", "303M", 24)]:
-    rbox(ax, 102, y0, 150, 76, ec, fc)
-    ax.text(110, y0 + 68, name, fontsize=8.5, weight="bold", color=ec, va="top")
-    ax.text(244, y0 + 68, size, fontsize=7.5, color=MUTE, va="top", ha="right")
-    sw = 134 / n
-    for i in range(n):
-        frozen = i < 8
-        ax.add_patch(Rectangle((110 + i * sw, y0 + 22), sw * .72, 26, fc="#E2E6EC" if frozen else ec, ec="#9AA4B1" if frozen else ec,
-                               lw=.3, hatch="//////" if frozen else None, zorder=2))
-    ax.text(110, y0 + 9, f"8 frozen · {n - 8} fine-tuned blocks", fontsize=7.5, color=MUTE, va="center")
-# tokens
-tokens(ax, D["pca_h"], 7, 14, 268, 195, 5.6, HP); tokens(ax, D["pca_c"], 8, 16, 268, 26, 5.0, CL)
-ax.text(287.6, 279, "tokens", ha="center", va="bottom", fontsize=7.5)
-arrow(ax, 252, 234, 266, 234); arrow(ax, 252, 66, 266, 66)
-# W: projection of both token sets to a shared width + source embedding
-ax.add_patch(plt.Circle((337, 150), 13, fc="white", ec=JT, lw=1.0, zorder=4))
-ax.text(337, 150, "W", ha="center", va="center", fontsize=9, weight="bold", color=JT, zorder=5)
-arrow(ax, 309, 200, 332, 163, color=HP, rad=-.15); arrow(ax, 309, 100, 332, 137, color=CL, rad=.15)
-ax.text(287, 150, "to 1024-d\n+ source\nembedding", ha="center", va="center", fontsize=7, color=JT, linespacing=1.2)
-# three query heads, each with its "hat" logit
-heads = [(196, HP, HP_BG, "H+ query head", "reads 99 H+ tokens", "h"),
-         (112, JT, JT_BG, "joint query head", "reads all 228 tokens", "j"),
-         (28, CL, CL_BG, "CLIP query head", "129 tokens + text score", "c")]
-for (y0, ec, fc, name, sub, key) in heads:
-    rbox(ax, 366, y0, 138, 76, ec, fc)
-    ax.text(374, y0 + 68, name, fontsize=8.5, weight="bold", color=ec, va="top")
-    ax.text(374, y0 + 50, sub, fontsize=7.5, va="top")
-    for q in range(7):                                   # attribute queries (40 in the model)
-        ax.add_patch(plt.Circle((379 + q * 9.5, y0 + 15), 3.6, fc="white", ec=ec, lw=.7, zorder=3))
-    ax.text(447, y0 + 15, "40 queries", fontsize=7, color=MUTE, va="center")
-    z = D["logits"][key][k]
-    ax.add_patch(plt.Circle((523, y0 + 38), 12.5, fc="white", ec=ec, lw=1.1, zorder=4))
-    ax.text(523, y0 + 38, f"{z:.1f}", ha="center", va="center", fontsize=8, zorder=5)
-    arrow(ax, 504, y0 + 38, 510, y0 + 38, color=ec)
-    arrow(ax, 535.5, y0 + 38, 546, 150 + (y0 + 38 - 150) * .12, color=MUTE)
-arrow(ax, 309, 234, 364, 234, color=HP); arrow(ax, 350, 150, 364, 150, color=JT); arrow(ax, 309, 66, 364, 66, color=CL)
-ax.text(523, 280, "“hat” logit", ha="center", va="bottom", fontsize=7.5, color=MUTE)
-ax.add_patch(plt.Circle((557, 150), 11, fc=INK, ec=INK, zorder=4))
-ax.text(557, 150, "avg", ha="center", va="center", fontsize=7.5, color="white", zorder=5)
-arrow(ax, 568, 150, 578, 150, color=MUTE)
-# predictions for this image: sigmoid of the averaged logit, threshold 0.5 for every attribute
-p = np.asarray(D["prob"]); order = list(np.argsort(-p)[:7]) + [A.index("LowerBody-Color-Purple"), A.index("Accessory-Glasses-Sun")]
-x0, x1, ytop, dy = 644, 694, 255, 21
-ax.text(694, 280, "prediction σ(avg)", ha="right", va="bottom", fontsize=7.5, color=MUTE)
-for r, i in enumerate(order):
-    y = ytop - r * dy
-    ax.text(x0 - 4, y, short(A[i]), ha="right", va="center", fontsize=7.5, weight="bold" if i == k else "normal")
-    ax.add_patch(Rectangle((x0, y - 6), x1 - x0, 12, fc="#EEF0F3", ec="none", zorder=1))
-    ax.add_patch(Rectangle((x0, y - 6), (x1 - x0) * p[i], 12, fc=INK if p[i] > .5 else "#AEB6C1", ec="none", zorder=2))
-yb = ytop - (len(order) - 1) * dy
-ax.plot([x0 + (x1 - x0) * .5] * 2, [yb - 9, ytop + 9], color="#C2304A", lw=.8, ls=(0, (2, 1.5)), zorder=3)
-ax.text(x0 + (x1 - x0) * .5, yb - 11, "0.5", ha="center", va="top", fontsize=7, color="#C2304A")
-ax.text(374, 11, r"training: $L=\sum_{k\in\{H,J,C\}}\,\ell_{\mathrm{LA}}(z_k,y)$", fontsize=7.5, va="center", color=INK)
+fig = plt.figure(figsize=(7.0, 3.1))
+ax = fig.add_axes([0, 0, 1, 1]); ax.set_xlim(0, 700); ax.set_ylim(0, 310); ax.axis("off")
+SEP = 446
+ax.text(3, 304, "(a) joint model", fontsize=8.5, weight="bold", va="top")
+ax.text(SEP + 6, 304, "(b) one query head", fontsize=8.5, weight="bold", va="top")
+ax.plot([SEP, SEP], [8, 300], color="#D5DAE0", lw=.6)
+lx, ly = 118, 297                                           # legend
+for i, (kind, lab) in enumerate([("main", "module"), ("op", "operation"), ("frozen", "frozen"), ("dash", "training only")]):
+    x = lx + i * 70
+    if kind == "dash":
+        path(ax, [(x, ly), (x + 15, ly)], dashed=True)
+    else:
+        ax.add_patch(FancyBboxPatch((x, ly - 4.5), 15, 9, boxstyle="round,pad=0,rounding_size=2",
+                                    fc={"main": YEL, "op": GRY, "frozen": "white"}[kind], ec=LINE, lw=.6, zorder=2))
+        if kind == "frozen":
+            lock(ax, x + 7.5, ly - .3, .7)
+    ax.text(x + 19, ly, lab, fontsize=6.8, va="center", color=MUTE)
+
+# ---------------- (a) joint model
+ax.imshow(PHOTO, extent=(6, 44, 114, 190), zorder=2, interpolation="none")
+ax.add_patch(Rectangle((6, 114), 38, 76, fill=False, ec=LINE, lw=.6, zorder=3))
+ax.text(25, 108, "input", ha="center", va="top", fontsize=7.2)
+ax.text(25, 99, "224 × 112", ha="center", va="top", fontsize=6.5, color=MUTE)
+for (y0, y1, rad) in ((178, 241, -.35), (126, 59, .35)):
+    ax.annotate("", xy=(56, y1), xytext=(44, y0), zorder=1, arrowprops=dict(arrowstyle="-|>", color=LINE, lw=.8,
+                mutation_scale=6, shrinkA=0, shrinkB=0, connectionstyle=f"arc3,rad={rad}"))
+XS = 218                                                    # token stacks and W
+for (cy, name, tuned, col, dim, ntok) in [(241, "DINOv3 ViT-H+/16", "24 blocks", HP, 1280, 99), (59, "CLIP ViT-L/14", "16 blocks", CL, 1024, 129)]:
+    blk(ax, 56, cy - 15, 96, cy + 15, "", kind="frozen")
+    lock(ax, 76, cy + 5)
+    ax.text(76, cy - 7, "8 blocks", ha="center", va="center", fontsize=6.3, color=MUTE, zorder=3)
+    blk(ax, 96, cy - 15, 188, cy + 15, name, tuned, color=col, bold=True, fs=7)
+    st = stack(ax, XS, cy, [col, None, None, None])
+    path(ax, [(188, cy), (st[0] - .5, cy)])
+    ax.text(XS, cy + 15 if cy > 150 else cy - 12, f"{ntok} × {dim}", ha="center", va="center", fontsize=6.3, color=MUTE)
+blk(ax, XS - 28, 139, XS + 28, 163, "W + source", "embedding", kind="op", fs=6.6)
+path(ax, [(XS, 236), (XS, 163)], color=HP); path(ax, [(XS, 67.6), (XS, 139)], color=CL)
+QX0, QX1, LX = 266, 358, 377
+QH = [(241, "DINOv3 query head", "99 tokens", HP, "h"), (151, "joint query head", "228 tokens", JT, "j"),
+      (59, "CLIP query head", "+ text score", CL, "c")]
+for (cy, name, sub, col, key) in QH:
+    blk(ax, QX0, cy - 13, QX1, cy + 13, name, sub, color=col, bold=True, fs=7)
+    ax.add_patch(plt.Circle((LX, cy), 9.5, fc="white", ec=col, lw=1.0, zorder=3))
+    ax.text(LX, cy, f"{D['logits'][key][k]:.1f}", ha="center", va="center", fontsize=7, zorder=4)
+    path(ax, [(QX1, cy), (LX - 9.5, cy)], color=col)
+for cy, col in ((241, HP), (59, CL)):
+    path(ax, [(XS + 18.8, cy), (QX0, cy)], color=col)
+path(ax, [(XS + 28, 151), (QX0, 151)], color=JT)
+ax.text(LX, 256, "“hat” logit", ha="center", va="bottom", fontsize=6.8, color=MUTE)
+AX_ = 408                                                   # average of the three logits, then the probability
+ax.add_patch(plt.Circle((AX_, 151), 8.5, fc=GRY, ec=LINE, lw=.75, zorder=3))
+ax.text(AX_, 151, "avg", ha="center", va="center", fontsize=6.5, zorder=4)
+path(ax, [(LX + 9.5, 241), (AX_, 241), (AX_, 159.5)]); path(ax, [(LX + 9.5, 151), (AX_ - 8.5, 151)])
+path(ax, [(LX + 9.5, 59), (AX_, 59), (AX_, 142.5)])
+path(ax, [(AX_ + 8.5, 151), (AX_ + 18, 151)])
+ax.text(AX_ + 21, 151, "σ", ha="left", va="center", fontsize=7.2)
+ax.text(AX_ + 2, 132, "p = %.3f" % D["prob"][k], ha="left", va="top", fontsize=6.6)
+path(ax, [(LX, 49.5), (LX, 18), (334, 18)], dashed=True)
+ax.text(330, 18, r"$L=\sum_{k\in\{D,J,C\}}\mathrm{BCE}(z_k+s,\,y)$", ha="right", va="center", fontsize=7.2)
+
+# ---------------- (b) inside one query head (same for all three; the joint one reads the 228 mapped tokens)
+xq, xm, xs, xt = 484, 540, 612, 674
+q0 = stack(ax, xq, 34, QCOLS)
+ax.text(xq, 20, "40 attribute queries", ha="center", va="center", fontsize=6.8, color=MUTE)
+t0 = stack(ax, xt, 34, ["#8A96A6", None, None, None])
+ax.text(697, 20, "CLS + patch tokens", ha="right", va="center", fontsize=6.8, color=MUTE)
+ax.text(697, 11, "(joint: 228, both encoders)", ha="right", va="center", fontsize=6.3, color=MUTE)
+blk(ax, xm - 23, 26, xm + 23, 42, "LayerNorm", kind="op", fs=6.5)
+path(ax, [(q0[2] + 1, 34), (xm - 23, 34)])
+path(ax, [(xm + 23, 34), (xs, 34), (xs, 80)])
+ax.text(xs + 4, 58, "Q", fontsize=7.2, weight="bold", va="center")
+blk(ax, xt - 23, 52, xt + 23, 68, "LayerNorm", kind="op", fs=6.5)
+path(ax, [(xt, t0[3]), (xt, 52)])
+path(ax, [(xt, 68), (xt, 93), (xs + 40, 93)])
+ax.text(xs + 44, 97, "K, V", fontsize=7.2, weight="bold", va="bottom")
+blk(ax, xs - 40, 80, xs + 40, 106, "cross-attention", "8 attention heads")
+plus(ax, xq, 120)
+path(ax, [(xq, q0[3]), (xq, 115)])
+path(ax, [(xs, 106), (xs, 120), (xq + 5, 120)])
+path(ax, [(xq, 125), (xq, 165)]); path(ax, [(xq, 141), (xm - 23, 141)])
+blk(ax, xm - 23, 133, xm + 23, 149, "LayerNorm", kind="op", fs=6.5)
+path(ax, [(xm + 23, 141), (xs - 40, 141)])
+blk(ax, xs - 40, 131, xs + 40, 151, "MLP", "hidden width ×2")
+plus(ax, xq, 170)
+path(ax, [(xs, 151), (xs, 170), (xq + 5, 170)])
+path(ax, [(xq, 175), (xq, 196), (xm - 23, 196)])
+blk(ax, xm - 23, 188, xm + 23, 204, "LayerNorm", kind="op", fs=6.5)
+path(ax, [(xm + 23, 196), (xs - 40, 196)])
+blk(ax, xs - 40, 184, xs + 40, 208, "40 classifiers", "one per attribute")
+z0 = stack(ax, xs, 232, ["#8FC1E3"] * 5)
+path(ax, [(xs, 208), (xs, 226.5)])
+ax.text(z0[0] - 3, 232, "40 logits", ha="right", va="center", fontsize=6.8, color=MUTE)
+path(ax, [(z0[2] + 2, 232), (664, 232)], dashed=True)
+ax.text(667, 232, "loss", ha="left", va="center", fontsize=6.8, style="italic")
+ax.text(697, 278, "one layer · width 1024 (DINOv3: 1280)", ha="right", va="center", fontsize=6.5, color=MUTE)
 fig.savefig(OUT / "arch.pdf"); fig.savefig(OUT / "arch.png", dpi=300); plt.close(fig)
 
-# ================================================================ Figure 2: the joint head follows the better member head
+# ================================================================ Figure 2: the joint query head moves toward the better one
+# x = gap between the two single-encoder query heads, y = gain of the joint query head over their mean (balanced accuracy,
+# points). y = 0: plain mean; y = x / 2: always the better of the two. All 148 points are drawn (none clipped).
 R = json.load(open(HERE / "ablations.json"))["joint_heads"]["per_attr"]
-fig, ax = plt.subplots(figsize=(3.35, 2.45)); fig.subplots_adjust(left=.155, right=.975, top=.975, bottom=.165)
-xs = np.linspace(-9, 9, 200)
-ax.fill_between(xs, 0, np.abs(xs) / 2, color="#E9EDF2", lw=0, zorder=0)
-ax.plot(xs, np.abs(xs) / 2, color=INK, lw=.9, ls=(0, (4, 2)), zorder=1); ax.axhline(0, color=MUTE, lw=.7, zorder=1)
-for run, col, mk, lab in [("PETA_s1", "#2E7D5B", "o", "PETA held out"), ("PETA_s2", "#2E7D5B", "o", None),
-                          ("Market_s1", "#B2405E", "s", "Market held out"), ("Market_s2", "#B2405E", "s", None)]:
+PETA_C, MKT_C = "#009E73", "#CC79A7"                    # Okabe-Ito bluish green / reddish purple, plus marker shape
+gap, gain, unit = [], [], []
+fig, ax = plt.subplots(figsize=(3.35, 2.5)); fig.subplots_adjust(left=.14, right=.975, top=.975, bottom=.175)
+for run, col, mk, lab in [("PETA_s1", PETA_C, "o", "PETA held out"), ("PETA_s2", PETA_C, "o", None),
+                          ("Market_s1", MKT_C, "s", "Market held out"), ("Market_s2", MKT_C, "s", None)]:
     h, c, j = (100 * np.asarray(R[x][run], float) for x in ("h", "c", "j"))
     ok = ~np.isnan(j)
-    ax.scatter((h - c)[ok], (j - (h + c) / 2)[ok], s=11, c=col, marker=mk, lw=.3, ec="white", alpha=.9, label=lab, zorder=3)
-ax.text(-8.7, 4.6, "better member", fontsize=7.5, ha="left", va="bottom", rotation=-24)
-ax.text(-8.7, -.3, "member average", fontsize=7.5, ha="left", va="top", color=MUTE)
-ax.set_xlim(-9, 9); ax.set_ylim(-3.2, 6.8)
-ax.set_xlabel("H+ head − CLIP head (balanced acc., points)", fontsize=7.5, labelpad=2)
-ax.set_ylabel("joint head − member average", fontsize=7.5, labelpad=2)
+    g, y = np.abs(h - c)[ok], (j - (h + c) / 2)[ok]
+    gap += list(g); gain += list(y); unit += [f"{run[:-3]}/{a}" for a in np.where(ok)[0]]   # unit = attribute in one fold
+    ax.scatter(g, y, s=12, marker=mk, fc="none" if mk == "s" else col, ec=col, lw=.8 if mk == "s" else .3, alpha=.85,
+               label=lab, zorder=3)
+gap, gain, unit = np.array(gap), np.array(gain), np.array(unit)
+xmax = np.ceil(gap.max()) + .5
+xs = np.array([0, xmax])
+ax.fill_between(xs, 0, xs / 2, color="#ECEFF3", lw=0, zorder=0)
+ax.plot(xs, xs / 2, color=INK, lw=.9, ls=(0, (4, 2)), zorder=1); ax.axhline(0, color=MUTE, lw=.7, zorder=1)
+# bin means with 95% bootstrap intervals; resampling whole attribute-fold units keeps the two seeds together
+rng = np.random.default_rng(20261017); units = np.unique(unit)
+edges = [0, 1, 2, 4, xmax]
+for lo, hi in zip(edges[:-1], edges[1:]):
+    m = (gap >= lo) & (gap < hi)
+    us = np.unique(unit[m]); bs = []
+    for _ in range(4000):
+        pick = np.concatenate([np.where(m & (unit == u))[0] for u in rng.choice(us, len(us))])
+        bs.append(gain[pick].mean())
+    lo_ci, hi_ci = np.percentile(bs, [2.5, 97.5]); xm = gap[m].mean()
+    ax.errorbar(xm, gain[m].mean(), yerr=[[gain[m].mean() - lo_ci], [hi_ci - gain[m].mean()]], fmt="D", ms=4.2, color=INK,
+                mfc="white", mew=1.0, elinewidth=1.0, capsize=2, zorder=5, label="bin mean, 95% CI" if lo == 0 else None)
+ax.text(11.2, 11.2 / 2 - .3, "better of the two", fontsize=7.2, ha="right", va="top", rotation=np.degrees(np.arctan(.5)),
+        transform_rotates_text=True, rotation_mode="anchor")
+ax.text(xmax - .2, -.25, "mean of the two", fontsize=7.2, ha="right", va="top", color=MUTE)
+ax.set_xlim(0, xmax); ax.set_ylim(-2.6, 9.6)
+ax.set_xlabel("gap between DINOv3 and CLIP query heads (points)", fontsize=7.2, labelpad=2)
+ax.set_ylabel("joint query head − mean of the two", fontsize=7.2, labelpad=2)
 ax.tick_params(labelsize=7, length=2.5, pad=2)
 for s_ in ("top", "right"):
     ax.spines[s_].set_visible(False)
 ax.spines["left"].set_linewidth(.7); ax.spines["bottom"].set_linewidth(.7)
-ax.legend(fontsize=7, frameon=False, loc="upper center", handletextpad=.1, borderaxespad=.2, ncol=2, columnspacing=.8)
+ax.legend(fontsize=7, frameon=False, loc="upper left", handletextpad=.2, borderaxespad=.2, labelspacing=.3)
 fig.savefig(OUT / "pick.pdf"); fig.savefig(OUT / "pick.png", dpi=300); plt.close(fig)
 
 # ================================================================ Figure 3: routing inside the joint head
@@ -176,18 +295,19 @@ fig.text(.01, .985, "(a)", fontsize=8.5, weight="bold", va="top")
 for (a, lab) in names:
     i = A.index(a); hsel = share[:, i] > .5
     wh = (heads_att[i][hsel][:, 1:99]).sum(0); wc = (heads_att[i][~hsel][:, 100:]).sum(0)
-    for col, (img, cap, c) in enumerate([(heat(wh, 14, 7, HP), f"{hsel.sum()} H+ heads", HP), (heat(wc, 16, 8, CL), f"{(~hsel).sum()} CLIP heads", CL)]):
-        axi = fig.add_axes([x + col * (iw + gap), top - ih, iw, ih]); axi.imshow(img, interpolation="none"); axi.set_xticks([]); axi.set_yticks([])
+    for col, (vals, rows, cols, cap, c) in enumerate([(wh, 14, 7, f"DINOv3 tokens\n{hsel.sum()} attn. heads", HP), (wc, 16, 8, f"CLIP tokens\n{(~hsel).sum()} attn. heads", CL)]):
+        axi = fig.add_axes([x + col * (iw + gap), top - ih, iw, ih]); heat(axi, vals, rows, cols, c); axi.set_xticks([]); axi.set_yticks([])
         for s_ in axi.spines.values():
             s_.set_edgecolor(c); s_.set_linewidth(1.0)
-        axi.set_title(cap, fontsize=7.5, color=c, pad=2)
-    fig.text(x + iw + gap / 2, top + .048, f"“{lab}”", fontsize=8.5, ha="center", va="bottom", weight="bold")
+        axi.set_title(cap, fontsize=7.2, color=c, pad=2, linespacing=1.15)
+    fig.text(x + iw + gap / 2, top + .075, f"“{lab}”", fontsize=8.5, ha="center", va="bottom", weight="bold")
     x += 2 * iw + gap + ggap + gap
 # (b) heatmap: 8 attention heads x 40 attributes, colour = share of attention on H+ tokens
 cmap = matplotlib.colors.LinearSegmentedColormap.from_list("route", [CL, "#FFFFFF", HP])
-axh = fig.add_axes([.075, .16, .905, .225])
+axh = fig.add_axes([.1, .16, .88, .225])
 axh.imshow(share, cmap=cmap, vmin=0, vmax=1, aspect="auto", interpolation="none")
-axh.set_yticks(range(8)); axh.set_yticklabels([f"head {h + 1}" for h in range(8)], fontsize=6.8)
+axh.set_yticks(range(8)); axh.set_yticklabels([str(h + 1) for h in range(8)], fontsize=6.8)
+axh.set_ylabel("attention head", fontsize=6.8, labelpad=3)
 axh.set_xticks(range(len(A))); axh.set_xticklabels([short(a) for a in A], fontsize=6.8, rotation=60, ha="right", rotation_mode="anchor")
 for t, a in zip(axh.get_xticklabels(), A):
     if a in dict(names):
@@ -201,7 +321,12 @@ for b in (6.5, 19.5, 32.5, 34.5):                      # groups: age/gender/hair
 nH = (share > .5).sum(0)
 for i in range(len(A)):
     axh.text(i, -.85, str(nH[i]), fontsize=6.8, ha="center", va="bottom", color=HP)
-axh.text(-.7, -.85, "H+ heads", fontsize=6.8, ha="right", va="bottom", color=HP)
+axh.text(-.7, -.85, "# on DINOv3", fontsize=6.8, ha="right", va="bottom", color=HP)
 fig.text(.01, .468, "(b)", fontsize=8.5, weight="bold", va="top")
+cax = fig.add_axes([.84, .452, .13, .018])
+cb = fig.colorbar(matplotlib.cm.ScalarMappable(norm=matplotlib.colors.Normalize(0, 1), cmap=cmap), cax=cax, orientation="horizontal")
+cb.set_ticks([0, .5, 1]); cb.set_ticklabels(["0", "0.5", "1"]); cax.xaxis.set_ticks_position("top")
+cb.ax.tick_params(labelsize=6.5, length=2, pad=1); cb.outline.set_linewidth(.5)
+fig.text(.832, .461, "share of attention on DINOv3 tokens", fontsize=6.8, ha="right", va="center")
 fig.savefig(OUT / "routing.pdf"); fig.savefig(OUT / "routing.png", dpi=300); plt.close(fig)
 print("figures written")
