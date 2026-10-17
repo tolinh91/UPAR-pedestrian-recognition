@@ -23,7 +23,7 @@ EARS = (3, 4)
 def heatmaps(ck_path, size, ds_items, bs):
     pose.set_size(*size)
     ck = torch.load(ck_path, map_location="cpu", weights_only=False)
-    model = pose.ViTPose(ck["args"]["model"], size).cuda().eval()
+    model = pose.build_model(ck["args"]["model"], size).cuda().eval()
     model.load_state_dict(ck["model"])
     ds = pose.PoseDataset([], train=False); ds.items = ds_items
     out = []
