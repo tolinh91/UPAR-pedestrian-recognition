@@ -107,7 +107,35 @@ def build_radio_vit(name, img_size=(256, 128), drop_path=0.1):
     return vit
 
 
+def _create_radio_hf(name, img_size):
+    """Releases without a rebuilt architecture in SPECS (C-RADIOv4-*): NVIDIA's own timm ViT from the Hugging Face
+    model (needs transformers; experiments only, weights always come from the hub and are then overwritten by any
+    checkpoint), patched exactly like the rebuilt one: [mean of the summary CLS tokens ; patch tokens], eval path of
+    the position embedding."""
+    from transformers import AutoModel
+
+    radio = AutoModel.from_pretrained(name, trust_remote_code=True).radio_model
+    cond = radio.input_conditioner
+    assert torch.allclose(cond.norm_mean.flatten().float(), torch.tensor(OPENAI_CLIP_MEAN)), "input normalisation changed"
+    assert torch.allclose(cond.norm_std.flatten().float(), torch.tensor(OPENAI_CLIP_STD)), "input normalisation changed"
+    vit = radio.model.float()
+    pg = vit.patch_generator
+    pg._get_pos_embeddings = MethodType(_pos_eval_path, pg)
+    if "summary_idxs" in dict(vit.named_buffers()):
+        vit.summary_idxs = radio.summary_idxs.clone()
+    else:
+        vit.register_buffer("summary_idxs", radio.summary_idxs.clone())
+    vit.forward_tokens = MethodType(_forward_tokens, vit)
+    vit.forward_features = MethodType(_forward_features, vit)
+    vit.num_prefix_tokens = 1
+    vit.pretrained_cfg = {"mean": OPENAI_CLIP_MEAN, "std": OPENAI_CLIP_STD, "input_size": (3, *img_size),
+                          "interpolation": "bicubic", "crop_pct": 1.0}
+    return vit
+
+
 def create_radio(name, img_size=(256, 128), drop_path=0.1, pretrained=True):
+    if name not in SPECS:
+        return _create_radio_hf(name, img_size)
     vit = build_radio_vit(name, img_size, drop_path)
     if pretrained:
         from transformers import AutoModel  # training only

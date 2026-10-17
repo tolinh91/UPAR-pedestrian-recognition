@@ -25,7 +25,8 @@ from timm.utils import ModelEmaV3
 from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
 from upar.data import MEAN, STD, UPARDataset, attr_names, build_transforms, invalid_mask, load_split
-from upar.losses import LOSSES, NoiseAdaptation, build_loss, distill_bce, distill_missing, group_ce
+from upar.losses import (LOSSES, NoiseAdaptation, build_loss, distill_bce, distill_missing, group_ce, listwise_ll,
+                         soft_challenge, ONE_HOT_GROUPS, COLOUR_GROUPS, CONFUSABLE_COLOUR_GROUPS)
 from upar.metrics import challenge_metrics, fmt
 from upar.models import HEADS, build_model, cfg_from_checkpoint
 from upar.registry import parse_kv
@@ -43,6 +44,17 @@ def get_args(argv=None):
                    help="one classifier per source dataset (own labelling convention); inference averages them")
     g.add_argument("--keep-blocks", type=int, default=0, help="use only the first N backbone blocks (0 = all)")
     g.add_argument("--multi-layer", type=int, default=0, help="head reads a learned mix of the last N blocks' tokens")
+    g.add_argument("--pos-init", default="resize", choices=["resize", "crop"],
+                   help="absolute position embedding of a non-square input: resize the square grid (timm default) or "
+                        "rescale isotropically to the height and centre-crop the width")
+    g.add_argument("--text-init", default=None,
+                   help="query_text head: file with CLIP projection + attribute text embeddings (make_clip_text.py)")
+    g.add_argument("--dual-kw", nargs="*", default=[], metavar="K=V",
+                   help="dual / tri models: mid=1 (mid-layer tokens), text_joint=1 (text-initialised joint queries), n_joint=2")
+    g.add_argument("--branch-drop", type=float, default=0.0,
+                   help="dual / tri models: per-batch probability that the joint query loses one backbone's tokens")
+    g.add_argument("--cls-pool", action="store_true",
+                   help="prepend the backbone's own pooled vector (SigLIP attention-pooling probe) as the CLS token")
     g.add_argument("--mixstyle-block", type=int, default=-1, help="MixStyle on the tokens after this block (-1 = off)")
     g.add_argument("--mixstyle-p", type=float, default=0.5)
     g.add_argument("--mixstyle-alpha", type=float, default=0.1)
@@ -59,10 +71,24 @@ def get_args(argv=None):
     g.add_argument("--aux-rec-weight", type=float, default=0.2)
     g.add_argument("--moe-aux", type=float, default=0.01, help="weight of the MoE load-balancing loss")
     g.add_argument("--group-ce", type=float, default=0.0, help="weight of the one-of-K group cross-entropy term")
+    g.add_argument("--gce-groups", default="all", choices=["all", "colours", "confusable"],
+                   help="groups of the group cross-entropy: all one-hot groups, the two colour groups, or only the "
+                        "colours models confuse most (black, blue, grey, white)")
+    g.add_argument("--soft-metric", type=float, default=0.0,
+                   help="weight of 1 - soft Challenge_Avg of the batch, on logits shifted by the decision rule")
+    g.add_argument("--soft-metric-tau", type=float, default=0.42, help="tau of the decision rule inside --soft-metric")
+    g.add_argument("--listwise", type=float, default=0.0, help="weight of the in-batch listwise log-likelihood loss")
+    g.add_argument("--listwise-tau", type=float, default=1.0)
     g = ap.add_argument_group("distillation")
     g.add_argument("--teacher", default=None, help="teacher checkpoint (best.pt / last.pt of a bigger model)")
     g.add_argument("--kd-alpha", type=float, default=0.5, help="loss = (1-a) * label loss + a * distillation loss")
     g.add_argument("--kd-T", type=float, default=1.0, help="distillation temperature")
+    g.add_argument("--kd-feat", type=float, default=0.0,
+                   help="weight of patch-token feature distillation (per-teacher projector, z-scored teacher tokens)")
+    g.add_argument("--kd-led", type=float, default=0.0,
+                   help="weight of label-wise embedding structure distillation (L2D, ICCV 2023)")
+    g.add_argument("--kd-rank", type=float, default=0.0,
+                   help="weight of per-attribute listwise ranking distillation over the batch")
     g.add_argument("--kd-mix", type=float, default=0.0,
                    help="probability that a batch is mixed (mixup or cutmix, half each) and trained on the teachers' "
                         "outputs for the mixed images only (function matching, Beyer et al. 2022)")
@@ -85,6 +111,8 @@ def get_args(argv=None):
                    help="LP-FT: train only the head for the first N epochs, then the whole network (Kumar et al. 2022)")
     g.add_argument("--freeze-blocks", type=int, default=0,
                    help="freeze patch embedding + the first N blocks (their layer-decayed lr is already ~0)")
+    g.add_argument("--freeze-encoders", action="store_true",
+                   help="dual models: freeze both encoders entirely (eval mode, no_grad); train only the query heads")
     g = ap.add_argument_group("data")
     g.add_argument("--train-splits", nargs="+", default=["train"])
     g.add_argument("--holdout", default=None, help="dataset left out of training; val is scored on it only")
@@ -92,6 +120,12 @@ def get_args(argv=None):
     g.add_argument("--train-rows", default=None, help=".npy of train-split row indices to train on (cross-fitting)")
     g.add_argument("--noise-mask", default=None, help="npz from noise_cv.py: label cells to ignore, per split")
     g.add_argument("--ds-alpha", type=float, default=0.5, help="dataset sampling ~ N^alpha (0 = equal)")
+    g.add_argument("--rare-rho", type=float, default=0.0,
+                   help="fraction of each batch filled class-aware with rare attribute values (upar/sampling.py, 0 = off)")
+    g.add_argument("--rare-thr", type=float, default=0.1, help="an attribute value is rare below this share")
+    g.add_argument("--rare-power", type=float, default=0.5, help="rare keys drawn ~ mass^power (0 = uniform)")
+    g.add_argument("--no-rare-comp", action="store_true",
+                   help="do not compensate the sampler's prior shift in the loss (ablation)")
     g.add_argument("--workers", type=int, default=min(12, os.cpu_count() or 2))
     g.add_argument("--prefetch", type=int, default=4, help="batches prefetched per worker (lower = less RAM)")
     g = ap.add_argument_group("run")
@@ -109,7 +143,7 @@ def get_args(argv=None):
     g.add_argument("--max-iters", type=int, default=0, help="smoke test: stop each epoch after N iterations")
     g.add_argument("--list", action="store_true", help="print registered losses and heads and exit")
     args = ap.parse_args(argv)
-    args.head_kw, args.loss_kw = parse_kv(args.head_kw), parse_kv(args.loss_kw)
+    args.head_kw, args.loss_kw, args.dual_kw = parse_kv(args.head_kw), parse_kv(args.loss_kw), parse_kv(args.dual_kw)
     return args
 
 
@@ -119,7 +153,10 @@ def model_cfg(args):
         if getattr(args, "mixstyle_block", -1) >= 0 else None
     return {"backbone": args.backbone, "size": list(args.size), "head": args.head, "head_kw": args.head_kw,
             "mean": getattr(args, "mean", None), "std": getattr(args, "std", None),
-            "multi_layer": getattr(args, "multi_layer", 0), "mixstyle": mix, "keep_blocks": getattr(args, "keep_blocks", 0)}
+            "multi_layer": getattr(args, "multi_layer", 0), "mixstyle": mix, "keep_blocks": getattr(args, "keep_blocks", 0),
+            "pos_init": getattr(args, "pos_init", "resize"), "cls_pool": getattr(args, "cls_pool", False),
+            **({"branch_drop": args.branch_drop} if getattr(args, "branch_drop", 0) else {}),
+            **({"dual_kw": args.dual_kw} if getattr(args, "dual_kw", None) else {})}
 
 
 # ---------------------------------------------------------------- data
@@ -140,9 +177,22 @@ def build_data(args):
     train_sets = [UPARDataset(s, build_transforms(size, True, aug=args.aug, **norm), inv, rows=rows(s, True),
                               ignore=noise[s] if s in noise else None) for s in args.train_splits]
     weights = np.concatenate([d.sample_weights(args.ds_alpha) for d in train_sets])
-    sampler = WeightedRandomSampler(weights, sum(len(d) for d in train_sets), replacement=True)
-    train_dl = DataLoader(ConcatDataset(train_sets), args.bs, sampler=sampler, num_workers=args.workers,
-                          pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=args.prefetch)
+    labels = np.concatenate([d.labels[d.idx] for d in train_sets])
+    valid = np.concatenate([d.valid[d.idx] for d in train_sets])
+    comp = torch.zeros(labels.shape[1])
+    if args.rare_rho > 0:
+        from upar.sampling import RareValueBatchSampler
+        bsamp = RareValueBatchSampler(labels, valid, weights, args.bs, len(weights) // args.bs, args.rare_rho,
+                                      args.rare_thr, args.rare_power, seed=args.seed + args.data_seed)
+        print(bsamp.describe(attr_names()), flush=True)
+        if not args.no_rare_comp:
+            comp = bsamp.compensation()
+        train_dl = DataLoader(ConcatDataset(train_sets), batch_sampler=bsamp, num_workers=args.workers,
+                              pin_memory=True, persistent_workers=True, prefetch_factor=args.prefetch)
+    else:
+        sampler = WeightedRandomSampler(weights, sum(len(d) for d in train_sets), replacement=True)
+        train_dl = DataLoader(ConcatDataset(train_sets), args.bs, sampler=sampler, num_workers=args.workers,
+                              pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=args.prefetch)
 
     val_rows = rows("val", False)
     if args.max_iters:
@@ -150,10 +200,8 @@ def build_data(args):
     val_ds = UPARDataset("val", build_transforms(size, False, **norm), rows=val_rows)
     val_dl = DataLoader(val_ds, 128, num_workers=args.workers, pin_memory=True)
 
-    labels = np.concatenate([d.labels[d.idx] for d in train_sets])
-    valid = np.concatenate([d.valid[d.idx] for d in train_sets])
     prior = (labels * valid).sum(0) / valid.sum(0).clip(1)  # fraction of positives per attribute
-    return train_dl, val_ds, val_dl, prior
+    return train_dl, val_ds, val_dl, prior, comp
 
 
 # ---------------------------------------------------------------- loops
@@ -207,6 +255,29 @@ class Teacher(nn.Module):
 
     def forward(self, x):
         return self.forward_all(x).mean(0)
+
+    def _inputs(self, x):
+        raw = None
+        for i in range(len(self.models)):
+            if self.same[i]:
+                yield x
+                continue
+            if raw is None:
+                raw = x * self.s_std.to(x.dtype) + self.s_mean.to(x.dtype)
+            xi = raw if self.sizes[i] == tuple(x.shape[-2:]) else F.interpolate(raw, size=self.sizes[i], mode="bilinear", align_corners=False)
+            yield (xi - getattr(self, f"mean{i}").to(x.dtype)) / getattr(self, f"std{i}").to(x.dtype)
+
+    def forward_rich(self, x):
+        """Per teacher: logits (B, K), patch-token grid (B, D, h, w), attribute embeddings (B, K, D) or None."""
+        out = []
+        for i, (m, xi) in enumerate(zip(self.models, self._inputs(x))):
+            logits, tok, q = m(xi, return_aux=True)
+            ps = m.backbone.patch_embed.patch_size
+            ps = ps[0] if isinstance(ps, (tuple, list)) else ps
+            h, w = self.sizes[i][0] // ps, self.sizes[i][1] // ps
+            pt = tok[:, -h * w:].float()
+            out.append((logits.float(), pt.transpose(1, 2).reshape(pt.shape[0], -1, h, w), None if q is None else q.float()))
+        return out
 
     def forward_all(self, x):
         """(n_teachers, B, K) logits."""
@@ -274,8 +345,49 @@ def kd_loss(logits, t_all, args):
     return cell.mean()
 
 
+class KDExtra(nn.Module):
+    """Training-only modules of the richer distillation losses (never saved with the student)."""
+
+    def __init__(self, s_dim, t_dims):
+        super().__init__()
+        self.proj = nn.ModuleList([nn.Linear(s_dim, d) for d in t_dims])
+
+
+def feat_kd(kdx, s_tok, n_prefix, grid, rich):
+    """PHI-S-style feature distillation: z-score each teacher's patch tokens per channel (balances teachers with very
+    different activation scales), resize them to the student's patch grid, MSE against the projected student tokens."""
+    h, w = grid
+    sp = s_tok[:, -h * w:].float()
+    loss = 0.0
+    for proj, (_, tg, _) in zip(kdx.proj, rich):
+        t = F.interpolate(tg, size=(h, w), mode="bilinear", align_corners=False).flatten(2).transpose(1, 2)
+        t = (t - t.mean((0, 1), keepdim=True)) / (t.std((0, 1), keepdim=True) + 1e-4)
+        loss = loss + F.mse_loss(proj(sp), t)
+    return loss / len(rich)
+
+
+def led_kd(s_q, rich):
+    """L2D label-wise embedding distillation: match the cosine-similarity structure of the attribute embeddings,
+    between attributes of one image (A x A) and between images for one attribute (B x B); teachers averaged."""
+    s = F.normalize(s_q.float(), dim=-1)
+    ts = [F.normalize(q, dim=-1) for _, _, q in rich if q is not None]
+    intra_t = sum(t @ t.transpose(1, 2) for t in ts) / len(ts)                       # (B, A, A)
+    inter_t = sum(t.transpose(0, 1) @ t.permute(1, 2, 0) for t in ts) / len(ts)      # (A, B, B)
+    return F.mse_loss(s @ s.transpose(1, 2), intra_t) + F.mse_loss(s.transpose(0, 1) @ s.permute(1, 2, 0), inter_t)
+
+
+def rank_kd(logits, t_logits, tau=1.0):
+    """Listwise ranking distillation per attribute: KL between the teacher's and the student's softmax over the batch."""
+    pt = F.softmax(t_logits.float().T / tau, -1)
+    return F.kl_div(F.log_softmax(logits.float().T / tau, -1), pt, reduction="batchmean")
+
+
+RULE_SHIFT = None
+SAMPLER_COMP = None
+
+
 def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, dtype, step, teacher=None, aux_dec=None,
-                    adapt=None):
+                    adapt=None, kdx=None):
     from upar.models.heads import MoEFFN
     moe_modules = [m for m in model.modules() if isinstance(m, MoEFFN)]
     model.train(); t0 = time.time(); run = torch.zeros((), device="cuda")
@@ -291,17 +403,26 @@ def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, d
             x = mix_batch(x)
         with torch.autocast("cuda", dtype=dtype):
             ds_kw = {"ds": d.cuda(non_blocking=True)} if args.ds_heads else {}
-            if aux_dec is not None:
+            if aux_dec is not None or kdx is not None:
                 logits, tokens, q_attr = model(x, return_aux=True, **ds_kw)
-                rec = aux_dec(q_attr if args.aux_rec == "attr" else tokens[:, model.n_prefix:], x)
+                if aux_dec is not None:
+                    rec = aux_dec(q_attr if args.aux_rec == "attr" else tokens[:, model.n_prefix:], x)
             else:
                 logits = model(x, **ds_kw)
         if adapt is not None:   # the labels are compared with what this dataset would record, not with the truth
             loss = loss_fn(adapt(logits, d.cuda(non_blocking=True)), y, v)
         else:
-            loss = loss_fn(logits.float(), y, v)
+            loss = loss_fn(logits.float() + SAMPLER_COMP, y, v)
+        if getattr(model, "parts", None) is not None:  # dual model: one loss per head (H+, CLIP, joint)
+            loss = sum(loss_fn(z.float() + SAMPLER_COMP, y, v) for z in model.parts.values())
+            model.parts = None
         if args.group_ce:
-            loss = loss + args.group_ce * group_ce(logits, y, v)
+            gg = {"all": ONE_HOT_GROUPS, "colours": COLOUR_GROUPS, "confusable": CONFUSABLE_COLOUR_GROUPS}[args.gce_groups]
+            loss = loss + args.group_ce * group_ce(logits, y, v, gg)
+        if args.soft_metric:
+            loss = loss + args.soft_metric * soft_challenge(logits, y, v, RULE_SHIFT)
+        if args.listwise and not mixed:
+            loss = loss + args.listwise * listwise_ll(logits, y, v, args.listwise_tau)
         if aux_dec is not None:
             loss = loss + args.aux_rec_weight * rec.float()
         aux = [m.last_aux for m in moe_modules if m.last_aux is not None]
@@ -309,7 +430,11 @@ def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, d
             loss = loss + args.moe_aux * sum(aux)
         if teacher is not None:
             with torch.no_grad(), torch.autocast("cuda", dtype=dtype):
-                t_all = teacher.forward_all(x.to(next(teacher.parameters()).dtype)).float()
+                if kdx is not None:
+                    rich = teacher.forward_rich(x.to(next(teacher.parameters()).dtype))
+                    t_all = torch.stack([r[0] for r in rich])
+                else:
+                    t_all = teacher.forward_all(x.to(next(teacher.parameters()).dtype)).float()
             t_logits = t_all.mean(0)
             if args.kd_missing:
                 loss = loss + args.kd_missing * distill_missing(logits, t_logits, v)
@@ -319,10 +444,20 @@ def train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, loader, args, d
                 loss = (1 - args.kd_alpha) * loss + args.kd_alpha * kd_loss(logits, t_all, args)
             else:
                 loss = (1 - args.kd_alpha) * loss + args.kd_alpha * distill_bce(logits, t_logits, args.kd_T)
+            if kdx is not None:
+                grid = (args.size[0] // 16, args.size[1] // 16)
+                with torch.autocast("cuda", dtype=dtype):
+                    if args.kd_feat:
+                        loss = loss + args.kd_feat * feat_kd(kdx, tokens, model.n_prefix, grid, rich)
+                if args.kd_led:
+                    loss = loss + args.kd_led * led_kd(q_attr, rich)
+            if args.kd_rank:
+                loss = loss + args.kd_rank * rank_kd(logits, t_logits)
         opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
         torch.nn.utils.clip_grad_norm_(list(model.parameters()) + (list(aux_dec.parameters()) if aux_dec else [])
+                                       + (list(kdx.parameters()) if kdx is not None else [])
                                        + (list(adapt.parameters()) if adapt is not None else []), 1.0)
         scaler.step(opt); scaler.update()
         ema.update(model, step=step); step += 1
@@ -367,17 +502,31 @@ def main():
     if args.data_seed:
         import random
         random.seed(args.data_seed); np.random.seed(args.data_seed); torch.manual_seed(args.data_seed)
-    dcfg = timm.data.resolve_data_config({}, model=model.backbone)  # input normalisation of the pretraining
+    dcfg = model.data_config() if hasattr(model, "data_config") else \
+        timm.data.resolve_data_config({}, model=model.backbone)  # input normalisation of the pretraining
     args.mean, args.std = list(dcfg["mean"]), list(dcfg["std"])
     print(f"input normalisation mean {args.mean} std {args.std}", flush=True)
-    train_dl, val_ds, val_dl, prior = build_data(args)
+    train_dl, val_ds, val_dl, prior, comp = build_data(args)
+    for th in (model.text_heads() if hasattr(model, "text_heads") else [model.head]):
+        if hasattr(th, "init_text"):  # query_text / inject_text: CLIP text anchors
+            th.init_text(args.text_init, prior)
+            print(f"text anchors from {args.text_init}", flush=True)
+    global SAMPLER_COMP  # logit offset of the rare sampler's prior shift
+    SAMPLER_COMP = comp.cuda()
     teacher = load_teacher(args.teacher, model_cfg(args)) if args.teacher else None
     if args.freeze_blocks:
         n_frozen = model.freeze_early(args.freeze_blocks)
         print(f"frozen patch embed + {args.freeze_blocks} blocks: {n_frozen / 1e6:.0f}M params", flush=True)
+    if args.freeze_encoders:
+        n_frozen = model.freeze_encoders()
+        n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"frozen encoders: {n_frozen / 1e6:.0f}M params, trainable {n_train / 1e6:.1f}M", flush=True)
     if args.grad_ckpt:
-        model.backbone.set_grad_checkpointing(True)
+        (model if hasattr(model, "set_grad_checkpointing") else model.backbone).set_grad_checkpointing(True)
     loss_fn = build_loss(args.loss, prior, **args.loss_kw).cuda()
+    global RULE_SHIFT  # decision rule tau * b_k with the training priors, used inside --soft-metric
+    pi = torch.as_tensor(prior, dtype=torch.float32).clamp(1e-3, 1 - 1e-3)
+    RULE_SHIFT = (args.soft_metric_tau * (torch.log((1 - pi) / pi) - (1 - 2 * pi))).cuda()
     ema = ModelEmaV3(model, decay=args.ema)
     if args.compile:  # in place: parameter names, EMA and checkpoints are unchanged
         model.compile()
@@ -399,6 +548,12 @@ def main():
         groups.append({"params": list(adapt.parameters()), "lr": args.lr * args.head_lr_mult, "weight_decay": 0.0})
     if aux_dec is not None:
         groups.append({"params": list(aux_dec.parameters()), "lr": args.lr * args.head_lr_mult, "weight_decay": args.wd})
+    kdx = None
+    if teacher is not None and (args.kd_feat or args.kd_led):
+        t_dims = [m.backbone.num_features for m in teacher.models]
+        kdx = KDExtra(model.backbone.num_features, t_dims).cuda()
+        groups.append({"params": list(kdx.parameters()), "lr": args.lr * args.head_lr_mult, "weight_decay": args.wd})
+        print(f"kd extras: feat {args.kd_feat} led {args.kd_led}, teacher dims {t_dims}", flush=True)
     opt = torch.optim.AdamW(groups, fused=True)
     sched = CosineWithWarmup(opt, args.epochs * len(train_dl), int(args.warmup * len(train_dl)))
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp == "fp16")
@@ -411,14 +566,14 @@ def main():
         best, step, start, stale = st["best"], st["step"], st["epoch"] + 1, st.get("stale", 0)
         print(f"resumed from epoch {st['epoch']} (best {best:.4f}, {stale} epoch(s) without improvement)", flush=True)
 
-    trainable = [p for p in model.backbone.parameters() if p.requires_grad]
+    trainable = [p for p in (model.backbone if hasattr(model, "backbone") else model).parameters() if p.requires_grad]
     for ep in range(start, args.epochs):
         t0 = time.time()
         if args.lp_epochs:  # LP-FT: backbone frozen while the freshly initialised head settles
             for p in trainable:
                 p.requires_grad_(ep >= args.lp_epochs)
             print(f"epoch {ep}: {'head only (LP)' if ep < args.lp_epochs else 'full fine-tuning'}", flush=True)
-        step = train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, train_dl, args, dtype, step, teacher, aux_dec, adapt)
+        step = train_one_epoch(ep, model, ema, loss_fn, opt, sched, scaler, train_dl, args, dtype, step, teacher, aux_dec, adapt, kdx)
         if adapt is not None:  # learned conventions, for inspection
             ra, rb = adapt.rates()
             json.dump({"a": ra.tolist(), "b": rb.tolist()}, open(out / "noise_adapt.json", "w"))

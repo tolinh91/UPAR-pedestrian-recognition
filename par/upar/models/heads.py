@@ -26,6 +26,20 @@ class LinearHead(nn.Sequential):
         return super().forward(feat)
 
 
+class SwiGLU(nn.Module):
+    """Gated MLP (Shazeer 2020; used in LLaMA and DINOv3): W3 (SiLU(W1 x) * W2 x). The hidden width is 2/3 of the
+    plain MLP's so that the parameter count matches."""
+
+    def __init__(self, dim, hidden, drop=0.0):
+        super().__init__()
+        h = int(2 * hidden / 3)
+        self.w12, self.w3, self.drop = nn.Linear(dim, 2 * h), nn.Linear(h, dim), nn.Dropout(drop)
+
+    def forward(self, x):
+        a, b = self.w12(x).chunk(2, -1)
+        return self.w3(self.drop(nn.functional.silu(a) * b))
+
+
 class MoEFFN(nn.Module):
     """Sparse mixture-of-experts MLP: a router sends each vector to its top-k of E expert MLPs (gates renormalised over
     the k chosen). Train mode computes every expert densely with zero gates for the unchosen (compile-friendly, same
@@ -88,6 +102,36 @@ def body_prior(grid, num_attrs, sigma=0.18):
     return out.reshape(num_attrs, H * W)
 
 
+class TempMultiheadAttention(nn.MultiheadAttention):
+    """nn.MultiheadAttention (same parameters, batch_first) whose attention logits of query a are divided by temp[a].
+    temp > 1 flattens the softmax over the tokens: that query pools a wider region instead of one or two patches (the
+    H+ query head reads clothing colours from ~1.4 tokens on average). Same call convention as nn.MultiheadAttention."""
+
+    def __init__(self, dim, n_heads, temp, dropout=0.0):
+        super().__init__(dim, n_heads, dropout=dropout, batch_first=True)
+        self.register_buffer("temp", torch.as_tensor(temp, dtype=torch.float32), persistent=False)
+
+    def forward(self, query, key, value, need_weights=False, attn_mask=None, average_attn_weights=True):
+        B, A, D = query.shape
+        N, h = key.shape[1], self.num_heads
+        d = D // h
+        wq, wk, wv = self.in_proj_weight.chunk(3)
+        bq, bk, bv = self.in_proj_bias.chunk(3)
+        q = nn.functional.linear(query, wq, bq).view(B, A, h, d).transpose(1, 2)
+        k = nn.functional.linear(key, wk, bk).view(B, N, h, d).transpose(1, 2)
+        v = nn.functional.linear(value, wv, bv).view(B, N, h, d).transpose(1, 2)
+        logits = (q @ k.transpose(-2, -1)) / (d ** 0.5) / self.temp.view(1, 1, A, 1).to(q.dtype)
+        if attn_mask is not None:
+            logits = logits + attn_mask.view(B, h, A, N).to(logits.dtype)
+        w = logits.softmax(-1)
+        out = (nn.functional.dropout(w, self.dropout, self.training) @ v).transpose(1, 2).reshape(B, A, D)
+        out = self.out_proj(out)
+        return (out, (w.mean(1) if average_attn_weights else w)) if need_weights else (out, None)
+
+
+CLOTHING = range(7, 35)   # UpperBody-Length-Short .. LowerBody-Type-Skirt&Dress in the 40-attribute order
+
+
 class EfficientCrossAttention(nn.Module):
     """Cross-attention of the attribute queries over the tokens without the softmax over tokens.
 
@@ -134,7 +178,7 @@ class QueryHead(nn.Module):
 
     def __init__(self, dim, num_attrs, n_layers=1, n_heads=8, drop=0.1, mlp_ratio=2.0, self_attn=False,
                  n_domains=1, avg_domains=None, moe_experts=0, moe_topk=2, moe_where="tokens",
-                 spatial_prior=False, fg_bias=False, grid=None, attn_type="softmax"):
+                 spatial_prior=False, fg_bias=False, grid=None, attn_type="softmax", mlp_type="gelu", attn_temp=1.0):
         super().__init__()
         # attention selectivity: a learnable body-part prior per attribute query and / or a data-dependent foreground
         # bias (CLS-patch similarity of the backbone) added to the attention logits over the patch tokens
@@ -154,6 +198,11 @@ class QueryHead(nn.Module):
                              persistent=False)
         self.queries = nn.Parameter(torch.randn(num_attrs, dim) * 0.02)
         self.kv_norm = nn.LayerNorm(dim)
+        # attn_temp: softmax temperature of the clothing queries (colour, length, type); the others keep 1
+        temp = torch.ones(num_attrs)
+        if attn_temp != 1.0:
+            assert num_attrs == 40, "attn_temp uses the 40-attribute order"
+            temp[list(CLOTHING)] = attn_temp
         self.layers = nn.ModuleList()
         for _ in range(n_layers):
             extra = {"sa_norm": nn.LayerNorm(dim),  # attributes exchange information (Query2Label decoder)
@@ -161,10 +210,12 @@ class QueryHead(nn.Module):
             self.layers.append(nn.ModuleDict({
                 **extra,
                 "q_norm": nn.LayerNorm(dim),
-                "attn": nn.MultiheadAttention(dim, n_heads, dropout=drop, batch_first=True) if attn_type == "softmax"
+                "attn": TempMultiheadAttention(dim, n_heads, temp, drop) if attn_type == "softmax" and attn_temp != 1.0
+                else nn.MultiheadAttention(dim, n_heads, dropout=drop, batch_first=True) if attn_type == "softmax"
                 else EfficientCrossAttention(dim, n_heads, attn_type, drop),
                 "mlp_norm": nn.LayerNorm(dim),
                 "mlp": MoEFFN(dim, moe_experts, moe_topk, mlp_ratio, drop) if q_moe else
+                SwiGLU(dim, int(dim * mlp_ratio), drop) if mlp_type == "swiglu" else
                 nn.Sequential(nn.Linear(dim, int(dim * mlp_ratio)), nn.GELU(), nn.Dropout(drop),
                               nn.Linear(int(dim * mlp_ratio), dim)),
             }))
@@ -390,3 +441,168 @@ class SequentialHead(nn.Module):
             q = torch.cat(outs, 1)[:, self.inv_order]
         q = self.drop(self.out_norm(q))
         return (q * self.fc_weight).sum(-1) + self.fc_bias
+
+
+@HEADS.register("joint")
+class JointHead(nn.Module):
+    """Full self-attention over [40 attribute queries ; CLS + patch tokens]: queries read the tokens and the tokens are
+    updated by the queries and by each other (pre-norm transformer layers), instead of cross-attention only."""
+    supports_q = True
+
+    def __init__(self, dim, num_attrs, n_layers=1, n_heads=8, mlp_ratio=4.0, drop=0.1):
+        super().__init__()
+        self.queries = nn.Parameter(torch.randn(num_attrs, dim) * 0.02)
+        self.layers = nn.ModuleList([nn.TransformerEncoderLayer(dim, n_heads, int(dim * mlp_ratio), drop, activation="gelu",
+                                                                batch_first=True, norm_first=True) for _ in range(n_layers)])
+        self.out_norm, self.drop = nn.LayerNorm(dim), nn.Dropout(drop)
+        self.fc_weight = nn.Parameter(torch.randn(num_attrs, dim) * 0.02)
+        self.fc_bias = nn.Parameter(torch.zeros(num_attrs))
+
+    def forward(self, tokens, n_prefix, return_q=False):
+        A = self.queries.shape[0]
+        x = torch.cat([self.queries.unsqueeze(0).expand(tokens.shape[0], -1, -1), tokens[:, :1], tokens[:, n_prefix:]], 1)
+        for layer in self.layers:
+            x = layer(x)
+        q = self.drop(self.out_norm(x[:, :A]))
+        logits = (q * self.fc_weight).sum(-1) + self.fc_bias
+        return (logits, q) if return_q else logits
+
+
+@HEADS.register("inject")
+class InjectHead(nn.Module):
+    """Attribute tokens inside the backbone: 40 learned tokens are inserted after the prefix tokens before the last k
+    ViT blocks (PARModel handles the insertion) and take part in full self-attention with the patches there. Each
+    attribute is read from its own token by its own classifier. The tokens live in the head so that they get the
+    head learning rate."""
+    supports_q = True
+
+    def __init__(self, dim, num_attrs, k=4, drop=0.1):
+        super().__init__()
+        self.k = k
+        self.attr_tokens = nn.Parameter(torch.randn(num_attrs, dim) * 0.02)
+        self.out_norm, self.drop = nn.LayerNorm(dim), nn.Dropout(drop)
+        self.fc_weight = nn.Parameter(torch.randn(num_attrs, dim) * 0.02)
+        self.fc_bias = nn.Parameter(torch.zeros(num_attrs))
+
+    def forward(self, tokens, n_prefix, return_q=False):
+        A = self.attr_tokens.shape[0]
+        q = self.drop(self.out_norm(tokens[:, n_prefix:n_prefix + A]))
+        logits = (q * self.fc_weight).sum(-1) + self.fc_bias
+        return (logits, q) if return_q else logits
+
+
+@HEADS.register("inject_joint")
+class InjectJointHead(InjectHead):
+    """Attribute tokens inside the last k backbone blocks (InjectHead) followed by n full self-attention layers over
+    [attribute tokens ; CLS + patches] (JointHead): backbone-level attribute latents, plus a head that can still
+    re-read the patches."""
+
+    def __init__(self, dim, num_attrs, k=4, n_layers=1, n_heads=8, mlp_ratio=4.0, drop=0.1):
+        super().__init__(dim, num_attrs, k, drop)
+        self.layers = nn.ModuleList([nn.TransformerEncoderLayer(dim, n_heads, int(dim * mlp_ratio), drop, activation="gelu",
+                                                                batch_first=True, norm_first=True) for _ in range(n_layers)])
+
+    def forward(self, tokens, n_prefix, return_q=False):
+        A = self.attr_tokens.shape[0]
+        x = torch.cat([tokens[:, n_prefix:n_prefix + A], tokens[:, :1], tokens[:, n_prefix + A:]], 1)
+        for layer in self.layers:
+            x = layer(x)
+        q = self.drop(self.out_norm(x[:, :A]))
+        logits = (q * self.fc_weight).sum(-1) + self.fc_bias
+        return (logits, q) if return_q else logits
+
+
+class TextAnchor:
+    """Language-anchored path for CLIP backbones, mixed into a head (see QueryTextHead).
+
+    The CLS token is mapped into CLIP's image-text space by the frozen pretrained projection P and scored against a
+    per-attribute text direction w_k = t(attribute prompt) - t("a photo of a person"), the CLIP zero-shot classifier:
+        text_logit_k = s * <normalize(P cls), w0_k + delta_scale * delta_k> + b_k
+    w0 (text) and P are buffers filled by init_text() before training (and restored from the checkpoint afterwards);
+    delta starts at 0 and moves with a delta_scale-times smaller effective step than the rest of the head, so the
+    classifier of a rare attribute stays near its language description instead of fitting the source datasets alone.
+    """
+
+    def _add_text(self, dim, num_attrs, embed_dim=768, scale=100.0, delta_scale=0.1):
+        self.register_buffer("proj", torch.zeros(dim, embed_dim))
+        self.register_buffer("text_w0", torch.zeros(num_attrs, embed_dim))
+        self.text_delta = nn.Parameter(torch.zeros(num_attrs, embed_dim))
+        self.text_b = nn.Parameter(torch.zeros(num_attrs))
+        self.scale, self.delta_scale = scale, delta_scale
+
+    @torch.no_grad()
+    def init_text(self, path, prior):
+        d = torch.load(path, map_location="cpu")
+        self.proj.copy_(d["proj"]); self.text_w0.copy_(d["pos"] - d["neutral"][None])
+        p = torch.as_tensor(prior, dtype=torch.float32).clamp(1e-3, 1 - 1e-3)
+        self.text_b.copy_(torch.log(p / (1 - p)))
+
+    def text_logits(self, tokens):
+        e = nn.functional.normalize(tokens[:, 0].float() @ self.proj, dim=-1)
+        w = self.text_w0 + self.delta_scale * self.text_delta
+        return self.scale * e @ w.T + self.text_b
+
+
+@HEADS.register("query_text")
+class QueryTextHead(QueryHead, TextAnchor):
+    """Query head + the language-anchored CLS path (TextAnchor): logit = query_k(tokens) + text_logit_k."""
+
+    def __init__(self, dim, num_attrs, embed_dim=768, scale=100.0, delta_scale=0.1, **query_kw):
+        super().__init__(dim, num_attrs, **query_kw)
+        self._add_text(dim, num_attrs, embed_dim, scale, delta_scale)
+
+    def forward(self, tokens, n_prefix, ds=None, return_q=False):
+        logits, q = self._logits(tokens, n_prefix, ds)
+        logits = logits + self.text_logits(tokens).to(logits.dtype)
+        return (logits, q) if return_q else logits
+
+
+@HEADS.register("inject_text")
+class InjectTextHead(InjectHead, TextAnchor):
+    """Attribute tokens inside the last k blocks (InjectHead) + the language-anchored CLS path (TextAnchor)."""
+
+    def __init__(self, dim, num_attrs, k=4, drop=0.1, embed_dim=768, scale=100.0, delta_scale=0.1):
+        super().__init__(dim, num_attrs, k, drop)
+        self._add_text(dim, num_attrs, embed_dim, scale, delta_scale)
+
+    def forward(self, tokens, n_prefix, return_q=False):
+        logits, q = super().forward(tokens, n_prefix, return_q=True)
+        logits = logits + self.text_logits(tokens).to(logits.dtype)
+        return (logits, q) if return_q else logits
+
+
+@HEADS.register("query_text_region")
+class QueryTextRegionHead(QueryTextHead):
+    """QueryTextHead + region anchors for the clothing colours (CLIP backbones).
+
+    Colour words are scored where the garment is: the upper-body colours on the upper rows of the patch grid, the
+    lower-body colours on the lower rows. The region embedding is the MaskCLIP dense embedding of each patch (value path of
+    the last attention block, final norm, frozen CLIP projection; PARModel puts these patch tokens in self.dense before
+    calling the head), normalised per patch, averaged over the rows and normalised again. Its score against the same
+    text direction as the CLS anchor is added:  logit_k += s * <e_region(k), w_k>  for the 24 colour attributes.
+    """
+
+    def __init__(self, dim, num_attrs, grid=None, up_rows=(2, 8), lo_rows=(8, 15), upper=(8, 20), lower=(21, 33), **kw):
+        super().__init__(dim, num_attrs, **kw)
+        self.grid, self.up_rows, self.lo_rows = tuple(grid), tuple(up_rows), tuple(lo_rows)
+        self.upper, self.lower = list(range(*upper)), list(range(*lower))
+        self.dense = None
+
+    def region_logits(self):
+        h, w = self.grid
+        with torch.autocast(self.dense.device.type, enabled=False):  # float32 throughout (index assignment below)
+            e = nn.functional.normalize(self.dense.float() @ self.proj.float(), dim=-1)
+            g = e.reshape(e.shape[0], h, w, -1)
+            up = nn.functional.normalize(g[:, self.up_rows[0]:self.up_rows[1]].mean((1, 2)), dim=-1)
+            lo = nn.functional.normalize(g[:, self.lo_rows[0]:self.lo_rows[1]].mean((1, 2)), dim=-1)
+            wt = (self.text_w0 + self.delta_scale * self.text_delta).float()
+            out = e.new_zeros(e.shape[0], wt.shape[0])
+            out[:, self.upper] = self.scale * up @ wt[self.upper].T
+            out[:, self.lower] = self.scale * lo @ wt[self.lower].T
+        self.dense = None
+        return out
+
+    def forward(self, tokens, n_prefix, ds=None, return_q=False):
+        logits, q = self._logits(tokens, n_prefix, ds)
+        logits = logits + (self.text_logits(tokens) + self.region_logits()).to(logits.dtype)
+        return (logits, q) if return_q else logits

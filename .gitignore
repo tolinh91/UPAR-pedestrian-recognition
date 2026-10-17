@@ -270,3 +270,7 @@ Thumbs.db
 # NVIDIA C-RADIO source files, downloaded from Hugging Face on first use (NVIDIA license)
 par/upar/models/radio_nv/*.py
 !par/upar/models/radio_nv/__init__.py
+
+# LaTeX back-reference files and rendered page previews
+*.brf
+report/**/preview/

@@ -14,6 +14,7 @@ Subclasses only define elementwise(logits, targets) -> per-cell loss.
   bce        binary cross-entropy
   logit_adj  BCE on logits shifted by tau * log(p / (1 - p)) during training only. At test time the raw
              logit is used, which moves the decision towards balanced accuracy (the mA view).
+  logit_adj_rule  same, shift tau * (log(p / (1 - p)) + (1 - 2p)): with DeepMAR, the decision of the v25 rule
   focal      focal loss, down-weights easy cells: (1 - p_t)^gamma * BCE
   asl        asymmetric loss (Ridnik et al. 2021): focusing gamma_pos / gamma_neg and probability
              shifting (clip) for negatives, designed for many-negative multi-label problems
@@ -73,6 +74,25 @@ class LogitAdjustedBCE(BaseLoss):
         return F.binary_cross_entropy_with_logits(logits + shift, targets, reduction="none")
 
 
+@LOSSES.register("logit_adj_rule")
+class LogitAdjustedRuleBCE(BaseLoss):
+    """logit_adj whose test-time decision equals the label-shift rule of the v25 package, learned during training.
+
+    With DeepMAR weights the weighted-BCE optimum is z = logit(posterior) + (1 - 2p). The v25 package added
+    tau * (log((1 - p) / p) - (1 - 2p)) to such logits after training. Training on z + s with
+    s = tau * (log(p / (1 - p)) + (1 - 2p)) gives the same decision z > 0 with the raw logit (no output offset);
+    plain logit_adj (s = tau * log(p / (1 - p))) keeps the full DeepMAR shift (1 - 2p) on top. Use with weighting=deepmar.
+    """
+    def __init__(self, prior, tau=0.42, **kw):
+        super().__init__(prior, **kw)
+        self.tau = tau
+
+    def elementwise(self, logits, targets):
+        p = self.prior
+        shift = self.tau * (torch.log(p / (1 - p)) + (1 - 2 * p))
+        return F.binary_cross_entropy_with_logits(logits + shift, targets, reduction="none")
+
+
 @LOSSES.register("focal")
 class FocalLoss(BaseLoss):
     def __init__(self, prior, gamma=2.0, **kw):
@@ -128,6 +148,41 @@ def group_ce(logits, labels, valid, groups=ONE_HOT_GROUPS):
             total = total + F.cross_entropy(logits[ok][:, idx].float(), y[ok].argmax(1), reduction="sum")
             n += int(ok.sum())
     return total / max(n, 1)
+
+
+# colours that the models confuse most on held-out datasets: black, blue, grey, white (top, then bottom)
+CONFUSABLE_COLOUR_GROUPS = ([8, 9, 12, 17], [21, 22, 25, 30])
+COLOUR_GROUPS = (list(range(8, 20)), list(range(21, 33)))
+
+
+def soft_challenge(logits, labels, valid, shift):
+    """1 - soft Challenge_Avg of the batch: the harmonic mean of a soft mA (balanced accuracy per attribute over the
+    batch) and a soft instance F1 (per image), computed on sigmoid(logits + shift), where shift is the test-time
+    decision rule (tau * b_k). Trains the decisions the metric scores instead of a per-cell likelihood."""
+    p = torch.sigmoid(logits.float() + shift)
+    m = valid.float(); y = labels.float()
+    pos, neg = y * m, (1 - y) * m
+    npos, nneg = pos.sum(0), neg.sum(0)
+    ok = (npos > 0) & (nneg > 0)
+    tpr = (p * pos).sum(0) / npos.clamp(min=1); tnr = ((1 - p) * neg).sum(0) / nneg.clamp(min=1)
+    ma = (0.5 * (tpr + tnr))[ok].mean() if ok.any() else p.new_ones(())
+    tp = (p * pos).sum(1); fp = (p * neg).sum(1); fn = ((1 - p) * pos).sum(1)
+    f1 = (2 * tp / (2 * tp + fp + fn).clamp(min=1e-6)).mean()
+    return 1 - 2 * ma * f1 / (ma + f1).clamp(min=1e-6)
+
+
+def listwise_ll(logits, labels, valid, tau=1.0):
+    """Contrastive loss in the retrieval score space. Each image's label vector is used as a query, every image of the
+    batch is scored with the Track 2 log-likelihood s_ij = sum_k y_ik log p_jk + (1 - y_ik) log(1 - p_jk) over the
+    query's annotated attributes, and the loss is minus the log of the softmax mass (over the batch) on the images whose
+    label vector equals the query's. This is the listwise criterion that predicts held-out mADM best (Spearman 0.97);
+    inference is unchanged."""
+    z = logits.float()
+    lp, lq = F.logsigmoid(z), F.logsigmoid(-z)                      # log p, log (1 - p), (B, K)
+    m = valid.float(); y = labels.float() * m
+    S = (y @ lp.T + ((1 - labels.float()) * m) @ lq.T) / tau       # (B queries, B images)
+    same = ((labels.float()[:, None, :] != labels.float()[None, :, :]).float() * m[:, None, :]).sum(-1) == 0
+    return -(torch.logsumexp(S.masked_fill(~same, float("-inf")), 1) - torch.logsumexp(S, 1)).mean()
 
 
 class NoiseAdaptation(torch.nn.Module):
