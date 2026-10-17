@@ -1,0 +1,25 @@
+starter/
+__pycache__/
+*.pyc
+runs/
+submissions/
+*.pt
+*.torchscript
+.venv
+
+# local environments, exported models and data (large, not for git)
+.venv*/
+exports/
+data/
+
+# LaTeX build files
+*.aux
+*.log
+*.out
+*.toc
+*.brf
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
