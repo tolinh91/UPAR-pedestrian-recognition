@@ -1,0 +1,26 @@
+{
+ "PETA": {
+  "n": 42,
+  "ll_minus_l1_min": 3.735891221073062,
+  "ll_minus_l1_max": 6.400641494107839,
+  "source_recal_helps": 0,
+  "source_recal_mean": -0.8480426075651344,
+  "oracle_recal_mean": 2.647009563476672
+ },
+ "Market1501": {
+  "n": 5,
+  "ll_minus_l1_min": 4.564875272402801,
+  "ll_minus_l1_max": 5.346633335830598,
+  "source_recal_helps": 0,
+  "source_recal_mean": -0.5330294466382002,
+  "oracle_recal_mean": 1.752850505219976
+ },
+ "PA100k": {
+  "n": 2,
+  "ll_minus_l1_min": 8.156781288397264,
+  "ll_minus_l1_max": 9.098886814835911,
+  "source_recal_helps": 1,
+  "source_recal_mean": 3.631279342014607,
+  "oracle_recal_mean": 5.733236359816626
+ }
+}
