@@ -68,3 +68,13 @@ training on the source datasets lowers retrieval quality although the miscalibra
 | source datasets / held-out dataset / fold | dataset nguồn / held-out dataset / fold giữ ngoài X | as in Track 1 (VI copy approved there) | unseen domain, dataset giữ lại |
 | development models | các mô hình của giai đoạn phát triển | the 49 earlier models with saved held-out logits | runs |
 | points | điểm | metric x 100 | |
+
+## English copy (2026-10-22)
+
+`main.tex` (pdflatex, WACV `[review,algorithms]`, anonymous) is the submission copy; figures `figs/*_en.pdf` from
+`analysis/make_figs.py --lang en --q 2876`. Body ends on page 8 (Conclusion, then References). Fixes made in both copies:
+abstract opens with the challenge (B1); the experiments opening no longer claims the highest mADM of all configurations
+(the query-expansion row is higher on Market); the dangling "this leads to calibration" transition is replaced by a
+link into group CE; figure labels now cite Eq. 4 (likelihood) and Eq. 5 (kNN); the DINOv3 two-copy row is two
+retrainings with the same recipe (HB, HP, both seed 1), not two seeds; superlatives removed; Limitations reduced to scope.
+Paper ID still `*****` until OpenReview assigns one.
