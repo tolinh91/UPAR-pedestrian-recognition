@@ -1,0 +1,803 @@
+{
+ "attributes": [
+  "Age-Young",
+  "Age-Adult",
+  "Age-Old",
+  "Gender-Female",
+  "Hair-Length-Short",
+  "Hair-Length-Long",
+  "Hair-Length-Bald",
+  "UpperBody-Length-Short",
+  "UpperBody-Color-Black",
+  "UpperBody-Color-Blue",
+  "UpperBody-Color-Brown",
+  "UpperBody-Color-Green",
+  "UpperBody-Color-Grey",
+  "UpperBody-Color-Orange",
+  "UpperBody-Color-Pink",
+  "UpperBody-Color-Purple",
+  "UpperBody-Color-Red",
+  "UpperBody-Color-White",
+  "UpperBody-Color-Yellow",
+  "UpperBody-Color-Other",
+  "LowerBody-Length-Short",
+  "LowerBody-Color-Black",
+  "LowerBody-Color-Blue",
+  "LowerBody-Color-Brown",
+  "LowerBody-Color-Green",
+  "LowerBody-Color-Grey",
+  "LowerBody-Color-Orange",
+  "LowerBody-Color-Pink",
+  "LowerBody-Color-Purple",
+  "LowerBody-Color-Red",
+  "LowerBody-Color-White",
+  "LowerBody-Color-Yellow",
+  "LowerBody-Color-Other",
+  "LowerBody-Type-Trousers&Shorts",
+  "LowerBody-Type-Skirt&Dress",
+  "Accessory-Backpack",
+  "Accessory-Bag",
+  "Accessory-Glasses-Normal",
+  "Accessory-Glasses-Sun",
+  "Accessory-Hat"
+ ],
+ "prompts": [
+  "a young person, a teenager or young adult",
+  "a middle-aged adult",
+  "an elderly old person",
+  "a woman",
+  "a person with short hair",
+  "a person with long hair",
+  "a bald person",
+  "a person wearing a short-sleeved top",
+  "a person wearing a black top",
+  "a person wearing a blue top",
+  "a person wearing a brown top",
+  "a person wearing a green top",
+  "a person wearing a grey top",
+  "a person wearing a orange top",
+  "a person wearing a pink top",
+  "a person wearing a purple top",
+  "a person wearing a red top",
+  "a person wearing a white top",
+  "a person wearing a yellow top",
+  "a person wearing a multicoloured patterned top",
+  "a person wearing shorts or a short skirt",
+  "a person wearing black trousers",
+  "a person wearing blue trousers",
+  "a person wearing brown trousers",
+  "a person wearing green trousers",
+  "a person wearing grey trousers",
+  "a person wearing orange trousers",
+  "a person wearing pink trousers",
+  "a person wearing purple trousers",
+  "a person wearing red trousers",
+  "a person wearing white trousers",
+  "a person wearing yellow trousers",
+  "a person wearing multicoloured patterned trousers",
+  "a person wearing long trousers or shorts",
+  "a person wearing a skirt or a dress",
+  "a person carrying a backpack",
+  "a person carrying a handbag or shoulder bag",
+  "a person wearing eyeglasses",
+  "a person wearing sunglasses",
+  "a person wearing a hat or a cap"
+ ],
+ "PETA": {
+  "n": 6963,
+  "attrs": {
+   "Age-Young": {
+    "pos": 237,
+    "auc_sub": 0.7999406547549593,
+    "auc_raw": 0.5771745390078931,
+    "corr_raw_neu": 0.5989434891163725
+   },
+   "Age-Adult": {
+    "pos": 6287,
+    "auc_sub": 0.34010939263230316,
+    "auc_raw": 0.46056693486983097,
+    "corr_raw_neu": 0.8442003552227926
+   },
+   "Age-Old": {
+    "pos": 428,
+    "auc_sub": 0.9181549385408547,
+    "auc_raw": 0.8596375376298723,
+    "corr_raw_neu": 0.7239389689659538
+   },
+   "Gender-Female": {
+    "pos": 3170,
+    "auc_sub": 0.9442302398324658,
+    "auc_raw": 0.8288240582643938,
+    "corr_raw_neu": 0.7182018476181338
+   },
+   "Hair-Length-Short": {
+    "pos": 5204,
+    "auc_sub": 0.5096429518728541,
+    "auc_raw": 0.505256266334682,
+    "corr_raw_neu": 0.8766209829912207
+   },
+   "Hair-Length-Long": {
+    "pos": 1649,
+    "auc_sub": 0.7413644473344436,
+    "auc_raw": 0.6435018497541763,
+    "corr_raw_neu": 0.8436264290808764
+   },
+   "Hair-Length-Bald": {
+    "pos": 129,
+    "auc_sub": 0.9576728759304254,
+    "auc_raw": 0.875367803027725,
+    "corr_raw_neu": 0.7697739268229635
+   },
+   "UpperBody-Length-Short": {
+    "pos": 1189,
+    "auc_sub": 0.7866563752770096,
+    "auc_raw": 0.665121453061096,
+    "corr_raw_neu": 0.7763734171701644
+   },
+   "UpperBody-Color-Black": {
+    "pos": 3101,
+    "auc_sub": 0.6454586657951503,
+    "auc_raw": 0.5880271828920057,
+    "corr_raw_neu": 0.8222334630768564
+   },
+   "UpperBody-Color-Blue": {
+    "pos": 522,
+    "auc_sub": 0.7829696133664783,
+    "auc_raw": 0.6982560833644141,
+    "corr_raw_neu": 0.7904093693844457
+   },
+   "UpperBody-Color-Brown": {
+    "pos": 493,
+    "auc_sub": 0.6764693342027959,
+    "auc_raw": 0.6466290038906358,
+    "corr_raw_neu": 0.8129405879926214
+   },
+   "UpperBody-Color-Green": {
+    "pos": 207,
+    "auc_sub": 0.7858486140785932,
+    "auc_raw": 0.7495495147630448,
+    "corr_raw_neu": 0.7540466982680281
+   },
+   "UpperBody-Color-Grey": {
+    "pos": 1263,
+    "auc_sub": 0.5787203956050062,
+    "auc_raw": 0.5395428595241072,
+    "corr_raw_neu": 0.8309479120677851
+   },
+   "UpperBody-Color-Orange": {
+    "pos": 66,
+    "auc_sub": 0.9560766428969996,
+    "auc_raw": 0.882577405195935,
+    "corr_raw_neu": 0.7498509717571777
+   },
+   "UpperBody-Color-Pink": {
+    "pos": 115,
+    "auc_sub": 0.9005764932954083,
+    "auc_raw": 0.8628733238520927,
+    "corr_raw_neu": 0.6721974335948444
+   },
+   "UpperBody-Color-Purple": {
+    "pos": 238,
+    "auc_sub": 0.8318984099215895,
+    "auc_raw": 0.7371922151760333,
+    "corr_raw_neu": 0.7738437817827841
+   },
+   "UpperBody-Color-Red": {
+    "pos": 378,
+    "auc_sub": 0.9207188857150892,
+    "auc_raw": 0.8166757059695556,
+    "corr_raw_neu": 0.7137411434089121
+   },
+   "UpperBody-Color-White": {
+    "pos": 1293,
+    "auc_sub": 0.7956639400052651,
+    "auc_raw": 0.6548341292347479,
+    "corr_raw_neu": 0.7628440899446824
+   },
+   "UpperBody-Color-Yellow": {
+    "pos": 76,
+    "auc_sub": 0.9405707167585,
+    "auc_raw": 0.8739482472698371,
+    "corr_raw_neu": 0.7276437254857407
+   },
+   "UpperBody-Color-Other": {
+    "pos": 4,
+    "auc_sub": 0.714362695789625,
+    "auc_raw": 0.684329645063946,
+    "corr_raw_neu": 0.638311300211866
+   },
+   "LowerBody-Length-Short": {
+    "pos": 234,
+    "auc_sub": 0.9430123219690764,
+    "auc_raw": 0.8304830603091861,
+    "corr_raw_neu": 0.7455416471139293
+   },
+   "LowerBody-Color-Black": {
+    "pos": 3302,
+    "auc_sub": 0.5753564798369906,
+    "auc_raw": 0.5184859779716828,
+    "corr_raw_neu": 0.8149336072730673
+   },
+   "LowerBody-Color-Blue": {
+    "pos": 1300,
+    "auc_sub": 0.537346473057227,
+    "auc_raw": 0.5563805539330879,
+    "corr_raw_neu": 0.7591763222722002
+   },
+   "LowerBody-Color-Brown": {
+    "pos": 289,
+    "auc_sub": 0.708503172461849,
+    "auc_raw": 0.6485856906883397,
+    "corr_raw_neu": 0.7562646148760206
+   },
+   "LowerBody-Color-Green": {
+    "pos": 22,
+    "auc_sub": 0.751254076567432,
+    "auc_raw": 0.5130319183769695,
+    "corr_raw_neu": 0.7314395738963321
+   },
+   "LowerBody-Color-Grey": {
+    "pos": 1704,
+    "auc_sub": 0.5565690205121201,
+    "auc_raw": 0.5356932269920467,
+    "corr_raw_neu": 0.7561925713244643
+   },
+   "LowerBody-Color-Orange": {
+    "pos": 5,
+    "auc_sub": 0.9902845645300373,
+    "auc_raw": 0.9654210980166714,
+    "corr_raw_neu": 0.68941686926232
+   },
+   "LowerBody-Color-Pink": {
+    "pos": 17,
+    "auc_sub": 0.7366745143205569,
+    "auc_raw": 0.7469555054961806,
+    "corr_raw_neu": 0.6748151157947625
+   },
+   "LowerBody-Color-Purple": {
+    "pos": 21,
+    "auc_sub": 0.48121853178032953,
+    "auc_raw": 0.3114101878146822,
+    "corr_raw_neu": 0.7439946720829202
+   },
+   "LowerBody-Color-Red": {
+    "pos": 43,
+    "auc_sub": 0.8299469014652507,
+    "auc_raw": 0.8069565801855088,
+    "corr_raw_neu": 0.6259639742999169
+   },
+   "LowerBody-Color-White": {
+    "pos": 371,
+    "auc_sub": 0.7832744255881506,
+    "auc_raw": 0.7476190203595635,
+    "corr_raw_neu": 0.6463212428520086
+   },
+   "LowerBody-Color-Yellow": {
+    "pos": 16,
+    "auc_sub": 0.9173923995969483,
+    "auc_raw": 0.914324528573485,
+    "corr_raw_neu": 0.6659204913765989
+   },
+   "LowerBody-Color-Other": {
+    "pos": 1,
+    "auc_sub": 0.8998850904912381,
+    "auc_raw": 0.6891697787991956,
+    "corr_raw_neu": 0.6690540903207958
+   },
+   "LowerBody-Type-Trousers&Shorts": {
+    "pos": 6562,
+    "auc_sub": 0.5287577307873261,
+    "auc_raw": 0.49328028602678003,
+    "corr_raw_neu": 0.8241301730272669
+   },
+   "LowerBody-Type-Skirt&Dress": {
+    "pos": 421,
+    "auc_sub": 0.7183929747562071,
+    "auc_raw": 0.6541964183921034,
+    "corr_raw_neu": 0.7634994753764915
+   },
+   "Accessory-Backpack": {
+    "pos": 1326,
+    "auc_sub": 0.7233745151285771,
+    "auc_raw": 0.6413274606932059,
+    "corr_raw_neu": 0.6461001050427587
+   },
+   "Accessory-Bag": {
+    "pos": 2551,
+    "auc_sub": 0.6887652363231599,
+    "auc_raw": 0.6612277268118417,
+    "corr_raw_neu": 0.5507986399920318
+   },
+   "Accessory-Glasses-Normal": {
+    "pos": 499,
+    "auc_sub": 0.7321142904621123,
+    "auc_raw": 0.5178757887061252,
+    "corr_raw_neu": 0.8138631946900496
+   },
+   "Accessory-Glasses-Sun": {
+    "pos": 267,
+    "auc_sub": 0.6965632117559144,
+    "auc_raw": 0.6437349818103715,
+    "corr_raw_neu": 0.832426320979395
+   },
+   "Accessory-Hat": {
+    "pos": 652,
+    "auc_sub": 0.8769625631748248,
+    "auc_raw": 0.7716383799637015,
+    "corr_raw_neu": 0.8083331619410561
+   }
+  },
+  "mean_auc_sub": 0.7550688694542786,
+  "mean_auc_raw": 0.6829420982016688,
+  "std_neu": 1.8156483173370361,
+  "mean_std_raw": 2.2803304195404053,
+  "mean_auc_sub_first3000": 0.7494429822353568,
+  "n_attr_first3000": 40
+ },
+ "Market1501": {
+  "n": 16458,
+  "attrs": {
+   "Age-Young": {
+    "pos": 39,
+    "auc_sub": 0.6018277761380264,
+    "auc_raw": 0.34090586109588483,
+    "corr_raw_neu": 0.6245934181118246
+   },
+   "Age-Adult": {
+    "pos": 16313,
+    "auc_sub": 0.19185079807304095,
+    "auc_raw": 0.39648429325458645,
+    "corr_raw_neu": 0.8468119423191133
+   },
+   "Age-Old": {
+    "pos": 106,
+    "auc_sub": 0.9246183029944984,
+    "auc_raw": 0.844927514492486,
+    "corr_raw_neu": 0.8043937451708505
+   },
+   "Gender-Female": {
+    "pos": 7278,
+    "auc_sub": 0.9696639258433061,
+    "auc_raw": 0.8816231475644211,
+    "corr_raw_neu": 0.5830466835821694
+   },
+   "Hair-Length-Short": {
+    "pos": 9886,
+    "auc_sub": 0.3903103566907419,
+    "auc_raw": 0.4796869799586251,
+    "corr_raw_neu": 0.8415968861725963
+   },
+   "Hair-Length-Long": {
+    "pos": 6020,
+    "auc_sub": 0.7126677600818374,
+    "auc_raw": 0.5919601360732157,
+    "corr_raw_neu": 0.8188238616451521
+   },
+   "Hair-Length-Bald": {
+    "pos": 175,
+    "auc_sub": 0.7798636614874409,
+    "auc_raw": 0.6576464498469043,
+    "corr_raw_neu": 0.7661355406376907
+   },
+   "UpperBody-Length-Short": {
+    "pos": 15414,
+    "auc_sub": 0.6503576636058079,
+    "auc_raw": 0.6169924639341158,
+    "corr_raw_neu": 0.6834262734762127
+   },
+   "UpperBody-Color-Black": {
+    "pos": 2234,
+    "auc_sub": 0.6279478151343436,
+    "auc_raw": 0.6091199208872391,
+    "corr_raw_neu": 0.7737582233139911
+   },
+   "UpperBody-Color-Blue": {
+    "pos": 1339,
+    "auc_sub": 0.7599329116220677,
+    "auc_raw": 0.7311106842154061,
+    "corr_raw_neu": 0.7156868225726297
+   },
+   "UpperBody-Color-Green": {
+    "pos": 1162,
+    "auc_sub": 0.8785285343405901,
+    "auc_raw": 0.8280398754311928,
+    "corr_raw_neu": 0.5823476277890807
+   },
+   "UpperBody-Color-Grey": {
+    "pos": 2215,
+    "auc_sub": 0.5646624400184542,
+    "auc_raw": 0.5988445633029666,
+    "corr_raw_neu": 0.7480115199052167
+   },
+   "UpperBody-Color-Purple": {
+    "pos": 465,
+    "auc_sub": 0.9493393951251522,
+    "auc_raw": 0.9125400965072757,
+    "corr_raw_neu": 0.6613976657436685
+   },
+   "UpperBody-Color-Red": {
+    "pos": 1690,
+    "auc_sub": 0.8375428320949823,
+    "auc_raw": 0.7500084542301602,
+    "corr_raw_neu": 0.6592500636562314
+   },
+   "UpperBody-Color-White": {
+    "pos": 4421,
+    "auc_sub": 0.8057134849820382,
+    "auc_raw": 0.6785767633413051,
+    "corr_raw_neu": 0.689592378418147
+   },
+   "UpperBody-Color-Yellow": {
+    "pos": 1473,
+    "auc_sub": 0.948019800746662,
+    "auc_raw": 0.9290634830349698,
+    "corr_raw_neu": 0.47674657487905914
+   },
+   "UpperBody-Color-Other": {
+    "pos": 1459,
+    "auc_sub": 0.6626173524659469,
+    "auc_raw": 0.674523058219874,
+    "corr_raw_neu": 0.5594641197732568
+   },
+   "LowerBody-Length-Short": {
+    "pos": 11015,
+    "auc_sub": 0.8271320095382101,
+    "auc_raw": 0.7792740495753081,
+    "corr_raw_neu": 0.5803390169046169
+   },
+   "LowerBody-Color-Black": {
+    "pos": 6316,
+    "auc_sub": 0.6166578661536892,
+    "auc_raw": 0.578615031342773,
+    "corr_raw_neu": 0.6797998006741091
+   },
+   "LowerBody-Color-Blue": {
+    "pos": 3344,
+    "auc_sub": 0.5395079348342434,
+    "auc_raw": 0.5381412163705394,
+    "corr_raw_neu": 0.6121427610932263
+   },
+   "LowerBody-Color-Brown": {
+    "pos": 1120,
+    "auc_sub": 0.6826274146377811,
+    "auc_raw": 0.6628192351396159,
+    "corr_raw_neu": 0.65052287130563
+   },
+   "LowerBody-Color-Green": {
+    "pos": 446,
+    "auc_sub": 0.7703754135071342,
+    "auc_raw": 0.7796646909436756,
+    "corr_raw_neu": 0.5497026997558021
+   },
+   "LowerBody-Color-Grey": {
+    "pos": 2862,
+    "auc_sub": 0.623912770620043,
+    "auc_raw": 0.610030332224568,
+    "corr_raw_neu": 0.6258418429001498
+   },
+   "LowerBody-Color-Pink": {
+    "pos": 450,
+    "auc_sub": 0.6940975345660503,
+    "auc_raw": 0.6114176245210728,
+    "corr_raw_neu": 0.5476951053658214
+   },
+   "LowerBody-Color-White": {
+    "pos": 917,
+    "auc_sub": 0.6840108519365211,
+    "auc_raw": 0.6495528730174246,
+    "corr_raw_neu": 0.5372956404405844
+   },
+   "LowerBody-Color-Yellow": {
+    "pos": 16,
+    "auc_sub": 0.6666958095122247,
+    "auc_raw": 0.5648833779345578,
+    "corr_raw_neu": 0.4635283532964526
+   },
+   "LowerBody-Color-Other": {
+    "pos": 987,
+    "auc_sub": 0.6125457330140904,
+    "auc_raw": 0.6103727620071858,
+    "corr_raw_neu": 0.58330020480969
+   },
+   "LowerBody-Type-Trousers&Shorts": {
+    "pos": 14497,
+    "auc_sub": 0.6477575395243462,
+    "auc_raw": 0.6135627702184738,
+    "corr_raw_neu": 0.6783751376210034
+   },
+   "LowerBody-Type-Skirt&Dress": {
+    "pos": 1961,
+    "auc_sub": 0.9498681557389865,
+    "auc_raw": 0.897074979060712,
+    "corr_raw_neu": 0.5778208496761229
+   },
+   "Accessory-Backpack": {
+    "pos": 4128,
+    "auc_sub": 0.7001960971538506,
+    "auc_raw": 0.6760939081587104,
+    "corr_raw_neu": 0.43804020600018784
+   },
+   "Accessory-Bag": {
+    "pos": 4004,
+    "auc_sub": 0.6557689540265419,
+    "auc_raw": 0.6504760295108778,
+    "corr_raw_neu": 0.43713050407664994
+   },
+   "Accessory-Glasses-Normal": {
+    "pos": 2855,
+    "auc_sub": 0.7023540058190008,
+    "auc_raw": 0.6489081874259477,
+    "corr_raw_neu": 0.7793983962288956
+   },
+   "Accessory-Glasses-Sun": {
+    "pos": 364,
+    "auc_sub": 0.6834604596348103,
+    "auc_raw": 0.5920904930784389,
+    "corr_raw_neu": 0.8138601945873798
+   },
+   "Accessory-Hat": {
+    "pos": 480,
+    "auc_sub": 0.894152115408687,
+    "auc_raw": 0.7888354299662035,
+    "corr_raw_neu": 0.7322916618065191
+   }
+  },
+  "mean_auc_sub": 0.7119583963844454,
+  "mean_auc_raw": 0.6698196098790209,
+  "std_neu": 1.5151768922805786,
+  "mean_std_raw": 2.1343016624450684,
+  "mean_auc_sub_first3000": 0.7179448988446717,
+  "n_attr_first3000": 34
+ },
+ "PA100k": {
+  "n": 3000,
+  "attrs": {
+   "Age-Young": {
+    "pos": 11,
+    "auc_sub": 0.7024544542108945,
+    "auc_raw": 0.6126707016636759,
+    "corr_raw_neu": 0.6823694234739488
+   },
+   "Age-Adult": {
+    "pos": 2956,
+    "auc_sub": 0.23558402017468325,
+    "auc_raw": 0.40523127075901094,
+    "corr_raw_neu": 0.8663062190468273
+   },
+   "Age-Old": {
+    "pos": 33,
+    "auc_sub": 0.9585337704650142,
+    "auc_raw": 0.7861016637558599,
+    "corr_raw_neu": 0.8559151448926973
+   },
+   "Gender-Female": {
+    "pos": 1062,
+    "auc_sub": 0.9645192103999891,
+    "auc_raw": 0.8787842126641517,
+    "corr_raw_neu": 0.7261461260602068
+   },
+   "Hair-Length-Short": {
+    "pos": 2059,
+    "auc_sub": 0.4922274310600309,
+    "auc_raw": 0.44206482620299464,
+    "corr_raw_neu": 0.8886675731516317
+   },
+   "Hair-Length-Long": {
+    "pos": 851,
+    "auc_sub": 0.6253010855758342,
+    "auc_raw": 0.606278765463017,
+    "corr_raw_neu": 0.8677504105351551
+   },
+   "Hair-Length-Bald": {
+    "pos": 33,
+    "auc_sub": 0.9439899500566842,
+    "auc_raw": 0.7116871444475085,
+    "corr_raw_neu": 0.796850083655768
+   },
+   "UpperBody-Length-Short": {
+    "pos": 1091,
+    "auc_sub": 0.7885562094550441,
+    "auc_raw": 0.621573049460825,
+    "corr_raw_neu": 0.7038150337104969
+   },
+   "UpperBody-Color-Black": {
+    "pos": 934,
+    "auc_sub": 0.6216177699098901,
+    "auc_raw": 0.5908924133156168,
+    "corr_raw_neu": 0.8004677981408527
+   },
+   "UpperBody-Color-Blue": {
+    "pos": 271,
+    "auc_sub": 0.7704131786645826,
+    "auc_raw": 0.6539640515496398,
+    "corr_raw_neu": 0.7394358731429308
+   },
+   "UpperBody-Color-Brown": {
+    "pos": 44,
+    "auc_sub": 0.8348966662566121,
+    "auc_raw": 0.7910567105425022,
+    "corr_raw_neu": 0.8035747736635752
+   },
+   "UpperBody-Color-Green": {
+    "pos": 25,
+    "auc_sub": 0.7946352941176471,
+    "auc_raw": 0.7527394957983193,
+    "corr_raw_neu": 0.7269402073646789
+   },
+   "UpperBody-Color-Grey": {
+    "pos": 705,
+    "auc_sub": 0.5798760796674856,
+    "auc_raw": 0.591623479967243,
+    "corr_raw_neu": 0.7867807188232548
+   },
+   "UpperBody-Color-Orange": {
+    "pos": 19,
+    "auc_sub": 0.9904835890464168,
+    "auc_raw": 0.9664542099966454,
+    "corr_raw_neu": 0.7158772447102068
+   },
+   "UpperBody-Color-Pink": {
+    "pos": 89,
+    "auc_sub": 0.837852546906542,
+    "auc_raw": 0.7786312283125997,
+    "corr_raw_neu": 0.6571510833145566
+   },
+   "UpperBody-Color-Purple": {
+    "pos": 51,
+    "auc_sub": 0.7666141397216737,
+    "auc_raw": 0.6964474497835756,
+    "corr_raw_neu": 0.7883782449178902
+   },
+   "UpperBody-Color-Red": {
+    "pos": 80,
+    "auc_sub": 0.9301969178082192,
+    "auc_raw": 0.8441566780821917,
+    "corr_raw_neu": 0.7400387857906183
+   },
+   "UpperBody-Color-White": {
+    "pos": 474,
+    "auc_sub": 0.840435003390895,
+    "auc_raw": 0.6534496928149774,
+    "corr_raw_neu": 0.6957700921495179
+   },
+   "UpperBody-Color-Yellow": {
+    "pos": 36,
+    "auc_sub": 0.943291722896986,
+    "auc_raw": 0.8722540860698755,
+    "corr_raw_neu": 0.6739258339592868
+   },
+   "UpperBody-Color-Other": {
+    "pos": 274,
+    "auc_sub": 0.6779806245347586,
+    "auc_raw": 0.6550465643090864,
+    "corr_raw_neu": 0.5868500319203223
+   },
+   "LowerBody-Length-Short": {
+    "pos": 202,
+    "auc_sub": 0.893946524745398,
+    "auc_raw": 0.745695298622071,
+    "corr_raw_neu": 0.6769196904086822
+   },
+   "LowerBody-Color-Black": {
+    "pos": 1677,
+    "auc_sub": 0.6169837709151109,
+    "auc_raw": 0.6542385058442645,
+    "corr_raw_neu": 0.7870750762417501
+   },
+   "LowerBody-Color-Blue": {
+    "pos": 717,
+    "auc_sub": 0.5723310552620149,
+    "auc_raw": 0.46244603402384127,
+    "corr_raw_neu": 0.7251964876204121
+   },
+   "LowerBody-Color-Brown": {
+    "pos": 33,
+    "auc_sub": 0.76851426295309,
+    "auc_raw": 0.7716804036318697,
+    "corr_raw_neu": 0.7351274737576956
+   },
+   "LowerBody-Color-Green": {
+    "pos": 12,
+    "auc_sub": 0.8818607764390897,
+    "auc_raw": 0.8010374832663989,
+    "corr_raw_neu": 0.7124238857421875
+   },
+   "LowerBody-Color-Grey": {
+    "pos": 407,
+    "auc_sub": 0.5742838164743294,
+    "auc_raw": 0.5138754783953395,
+    "corr_raw_neu": 0.6981106043470767
+   },
+   "LowerBody-Color-Orange": {
+    "pos": 12,
+    "auc_sub": 0.934599509147702,
+    "auc_raw": 0.8974509147701919,
+    "corr_raw_neu": 0.6798972096413599
+   },
+   "LowerBody-Color-Pink": {
+    "pos": 13,
+    "auc_sub": 0.8637943910792923,
+    "auc_raw": 0.8788854265921557,
+    "corr_raw_neu": 0.6669180328490159
+   },
+   "LowerBody-Color-Purple": {
+    "pos": 1,
+    "auc_sub": 0.9873291097032344,
+    "auc_raw": 0.8889629876625542,
+    "corr_raw_neu": 0.7409500400884192
+   },
+   "LowerBody-Color-Red": {
+    "pos": 27,
+    "auc_sub": 0.9212168778263632,
+    "auc_raw": 0.9179903078322184,
+    "corr_raw_neu": 0.6438906754508695
+   },
+   "LowerBody-Color-White": {
+    "pos": 48,
+    "auc_sub": 0.7169150858175248,
+    "auc_raw": 0.603051603432701,
+    "corr_raw_neu": 0.5740212687735773
+   },
+   "LowerBody-Color-Yellow": {
+    "pos": 4,
+    "auc_sub": 0.9337449933244326,
+    "auc_raw": 0.7947263017356475,
+    "corr_raw_neu": 0.6041637411246843
+   },
+   "LowerBody-Color-Other": {
+    "pos": 54,
+    "auc_sub": 0.6417804430363833,
+    "auc_raw": 0.5718676925397903,
+    "corr_raw_neu": 0.6507978963183971
+   },
+   "LowerBody-Type-Trousers&Shorts": {
+    "pos": 2772,
+    "auc_sub": 0.43528486620591883,
+    "auc_raw": 0.36789574947469683,
+    "corr_raw_neu": 0.7812028744192324
+   },
+   "LowerBody-Type-Skirt&Dress": {
+    "pos": 210,
+    "auc_sub": 0.9254855777436423,
+    "auc_raw": 0.8933094384707287,
+    "corr_raw_neu": 0.7095047703478916
+   },
+   "Accessory-Backpack": {
+    "pos": 443,
+    "auc_sub": 0.7387899017524593,
+    "auc_raw": 0.6824783204781987,
+    "corr_raw_neu": 0.689008041320446
+   },
+   "Accessory-Bag": {
+    "pos": 915,
+    "auc_sub": 0.7398608326453591,
+    "auc_raw": 0.729435074890907,
+    "corr_raw_neu": 0.550262429113227
+   },
+   "Accessory-Glasses-Normal": {
+    "pos": 472,
+    "auc_sub": 0.883303609740399,
+    "auc_raw": 0.6924286968998069,
+    "corr_raw_neu": 0.7063519256281006
+   },
+   "Accessory-Glasses-Sun": {
+    "pos": 46,
+    "auc_sub": 0.7070663212740278,
+    "auc_raw": 0.5856465809072444,
+    "corr_raw_neu": 0.7720373201033907
+   },
+   "Accessory-Hat": {
+    "pos": 99,
+    "auc_sub": 0.8446094868018342,
+    "auc_raw": 0.7540137674574076,
+    "corr_raw_neu": 0.8306719354472332
+   }
+  },
+  "mean_auc_sub": 0.7720290219301873,
+  "mean_auc_raw": 0.7029555940471838,
+  "std_neu": 1.6541328430175781,
+  "mean_std_raw": 2.0330967903137207,
+  "mean_auc_sub_first3000": 0.7720290219301873,
+  "n_attr_first3000": 40
+ }
+}
