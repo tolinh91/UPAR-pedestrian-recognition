@@ -1,6 +1,7 @@
-% UPAR 2027 Track 1 paper (system v31). WACV 2026 author kit, the format required by the RWS workshop at WACV 2027.
-% Writing rules: skill upar-paper-rules (~/.claude/skills/upar-paper-rules), terminology: PLAN.md. The Vietnamese
-% reading copy main_vi.tex is reviewed first; this file follows it. Plain English at CEFR B2 level, technical terms kept.
+% UPAR 2027 Track 1 paper (UniQuery). WACV 2026 author kit, the format required by the RWS workshop at WACV 2027.
+% Base text: the teammate draft "UniQuery" (/media/tan/F/RWS2027/main.pdf, 2026-10-21), kept as written except factual
+% fixes; missing parts (protocol, ablations, hidden test, limitations, conclusion) added in the same voice.
+% Writing rules: skill upar-paper-rules; terminology: PLAN.md. Old English draft: main_en_old_1021.tex.
 \documentclass[10pt,twocolumn,letterpaper]{article}
 
 %%%%%%%%% PAPER TYPE: anonymous review version (the kit requires a track option in review mode)
@@ -21,21 +22,21 @@
 \def\confName{WACV}
 \def\confYear{2027}
 
-\title{Train Them Together: A Joint Query Head over DINOv3 and CLIP\\for Cross-Domain Pedestrian Attribute Recognition}
-\author{Anonymous WACV submission}
+\title{UniQuery: Unifying Vision Models with a Joint Query Head\\for Cross-Domain Pedestrian Attribute Recognition}
+\author{Anonymous WACV Algorithms Track submission}
 
 \begin{document}
 \maketitle
 
 %=====================================================================
 \begin{abstract}
-This paper describes our solution to Track~1, Pedestrian Attribute Recognition, of the UPAR Challenge 2027 at the Real-World Surveillance (RWS) workshop of WACV 2027. In this track, models are trained on PA100k, PETA and Market-1501 and tested on a hidden set of images from other cameras. They must therefore stay accurate when the image resolution, camera angle, lighting and labeling rules change. Earlier solutions fine-tune one encoder, or merge two encoders into one feature shared by all attributes. Another common choice is a separate ensemble, in which each encoder is fine-tuned alone and their logits are averaged. This ensemble mixes the two encoders with the same fixed weights for every attribute, and the two encoders are never trained together. We propose a joint model that targets both points. It fine-tunes two foundation encoders, DINOv3 and CLIP, in one network. Each encoder has its own query head, and a third, joint query head gives each attribute a query that reads the tokens of both encoders, so the mix is learned during training and can differ between attributes. At test time, the logits of the three query heads are averaged. In leave-one-dataset-out tests, the joint model reaches a higher Challenge\_Avg than the separate ensemble on both held-out datasets. In contrast, a mix learned on top of the trained separate ensemble does not beat the plain logit average, and the joint model with frozen encoders does worse. On the hidden test set of the challenge, the joint model reaches 0.8001 Challenge\_Avg with one threshold of 0.5 for all attributes, against 0.7989 for the separate ensemble.
+In this paper, we present our solution to Track~1, Pedestrian Attribute Recognition (PAR), of the UPAR Challenge 2027 at the WACV 2027 Real-World Surveillance workshop. PAR provides semantic descriptions of individuals, enabling attribute-based person retrieval and supporting person re-identification. However, accurately recognizing fine-grained attributes across domains remains challenging due to occlusion, appearance variations, and shifts in image distributions. Ensembles of independently trained foundation encoders combine their logits with fixed fusion weights, so every attribute uses the same mix and the encoders are never trained together. Our model, UniQuery, instead jointly fine-tunes DINOv3~\cite{dinov3} and CLIP~\cite{clip} for attribute-specific fusion. It combines two query heads, one for each encoder, with a joint query head whose attribute queries attend to tokens from both encoders, and the prediction is the average of the logits of the three query heads. Trained on PA100k~\cite{pa100k}, PETA~\cite{peta}, and Market-1501~\cite{market}, the model outperforms the independent ensemble in Challenge\_Avg on both evaluated leave-one-dataset-out splits. Ablations show that learning fusion over independently trained encoders does not improve upon logit averaging, while freezing the encoders lowers the Challenge\_Avg of UniQuery. On the hidden challenge test set, our approach achieves a Challenge\_Avg of 0.8001.
 \end{abstract}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{arch.pdf}
-\caption{(a) The joint model on one PETA image. Both encoders are fine-tuned in one network, except the patch embedding and the first eight blocks of each encoder, which are frozen. Besides the query head of each encoder, a joint query head attends to the tokens of both encoders after a linear map $W$ to a shared width and a source embedding. The circles show the logits of the three query heads for the ``hat'' attribute, computed with the submitted weights, and their average goes through a sigmoid. The image comes from the PETA validation split, which the submitted model saw in training. During training, the loss of \cref{eq:loss} is applied to each query head. (b) One query head. Forty learned attribute queries attend to the image tokens through cross-attention, and a residual MLP and one classifier per attribute turn each query into a logit. The three query heads share this design and differ only in the tokens they read.}
+\includegraphics[width=\linewidth]{uniquery_model.pdf}
+\caption{UniQuery on one PETA image. Striped parts with a lock are frozen, light tints mark trained parts, gray boxes are operations without parameters, and token cells are colored by the PCA of the patch tokens. In the text-score branch, $P$ is the pretrained CLIP projection, $e$ the projected and normalized CLS token, $w_k$ the vector of the sentence for attribute $k$ minus that of \texttt{a person}, and $\delta_k$ and $b_k$ are learned. In training, each query head has its own loss with the shift $s$ (\cref{eq:loss}). At inference, the logits of the three query heads are averaged and compared with a threshold of 0.5. The submitted model saw this image in training.}
 \label{fig:arch}
 \end{figure*}
 
@@ -43,72 +44,123 @@ This paper describes our solution to Track~1, Pedestrian Attribute Recognition, 
 \section{Introduction}
 \label{sec:intro}
 
-This paper describes our solution to Track~1 of the UPAR Challenge 2027, held at the Real-World Surveillance (RWS) workshop of WACV 2027. The challenge continues the 2023 and 2024 editions~\cite{upar23,upar24} and builds on the UPAR dataset~\cite{upar}. Track~1 asks for a pedestrian attribute recognizer that works on cameras it never saw in training. Models are trained on PA100k~\cite{pa100k}, PETA~\cite{peta} and Market-1501~\cite{market,marketattr}, which share 40 binary attributes, and are tested on a hidden set of images from other domains. Image resolution, camera angle and lighting change from camera to camera, and each training dataset labels attributes by its own rules. A model that fits the training cameras well can therefore still fail on new ones.
+Pedestrian analysis plays an important role in intelligent video surveillance and online retail applications. A key task, Pedestrian Attribute Recognition (PAR), predicts semantic attributes of individuals from images, providing interpretable descriptions that support attribute-based person retrieval and person re-identification. Despite recent progress, robust recognition remains challenging due to occlusion, low image resolution, label imbalance, and variations in appearance and imaging conditions~\cite{rap,upar,labelbalanced}. Recognition becomes harder still on a camera that was never seen in training, because resolution, viewpoint and lighting change, and each training dataset labels attributes by its own rules~\cite{upar}.
 
-Foundation encoders are a natural answer to this domain shift. They are pretrained on very large and varied image collections, so their features already cover many scenes, camera styles and conditions that the small training sets of pedestrian attribute recognition miss. To use an encoder for a specific task, it is usually fine-tuned with a small head. Fine-tuning adapts the encoder to the task, but it can also damage the pretrained features and lower accuracy under distribution shift~\cite{lpft,wiseft}. For cameras never seen in training, it is therefore unclear whether the encoder should be fine-tuned or kept at its pretrained weights.
+Foundation encoders pretrained on large and varied image collections~\cite{dinov3,clip} are a natural starting point for this shift. They are usually adapted to downstream tasks by fine-tuning one encoder with a small head, or by averaging the logits of several independently fine-tuned encoders~\cite{deepens}. Earlier UPAR entries followed these routes, with a single fine-tuned Swin-B~\cite{upar23}, thresholds tuned for each attribute on validation data~\cite{upar24}, or two encoders merged into one vector shared by all attributes~\cite{c2tnet}. An average of independently fine-tuned encoders uses the same mix for every attribute, and its encoders are never trained together.
 
-Two different foundation encoders can be strong on different attributes. In our experiments, when DINOv3~\cite{dinov3} and CLIP~\cite{clip} are fine-tuned alone, each of them recognizes a different group of attributes better than the other. The simplest way to combine them is an ensemble of separately fine-tuned encoders (separate ensemble)~\cite{deepens}. Each encoder is fine-tuned alone, and the logits of the two encoders are averaged with equal weights for every attribute. This already beats each encoder alone, but it gives both encoders the same weight on every attribute, including attributes where one encoder is clearly better. Another option is to learn how to mix the models from data. The mix can be learned after the models are trained, as in stacking~\cite{stacking}, or together with the models, as in a mixture of experts~\cite{moe}. In this task, the mix can also differ between attributes. Both options learn the mix on images of the source datasets, so it must be tested whether the learned mix still holds on datasets that are absent from training.
-
-Earlier entries of the UPAR challenge took several paths. The 2023 winner fine-tuned a single Swin-B and added a penalty term based on how often each attribute appears~\cite{upar23}. In 2024, one team tuned a separate threshold for each attribute on validation data~\cite{upar24}, and the second-placed C$^2$T-Net~\cite{c2tnet} trained a Swin-B and an EVA ViT-L end to end and merged them with cross-attention in both directions. C$^2$T-Net is the closest to our work, because it also learns the mix of two encoders during training. However, it merges the two encoders into one vector, and every attribute is predicted from this vector.
-
-This paper focuses on how to use foundation encoders for this task. We split the problem into three questions: which encoders to combine, whether to fine-tune them or keep them frozen, and whether to learn their mix after training or during it. The answers lead to a joint model of two encoders with different pretraining, DINOv3 and CLIP, which learns the mix while both encoders are fine-tuned.
-
-Our \emph{joint model} (\cref{fig:arch}) fine-tunes DINOv3 and CLIP in one network. Each encoder keeps its own query head~\cite{q2l,mldecoder}, the DINOv3 query head and the CLIP query head (single-encoder query heads). In a query head, each attribute has a learned attribute query, which reads the image tokens and gives the logit of that attribute. A third query head, the joint query head, reads the tokens of both encoders. Each attribute can therefore mix the two encoders in its own way, and this mix can change from image to image. The loss of the joint query head also sends gradients into both encoders, so the two encoders are fine-tuned together instead of separately. At test time, the logits of the three query heads are averaged.
-
-The gains of the joint model over the separate ensemble are small, and small gains are easy to exaggerate. Under a fair protocol, many domain generalization methods do not beat plain training~\cite{domainbed}. We therefore build an evaluation framework that tests each step of the argument under matched conditions. Every model is tested on a dataset that it never saw in training. The joint model and the separate ensemble use the same encoders, the same loss and the same number of encoder passes. The main comparison is repeated across seeds and design variants, and then checked on the hidden test set. Within this framework, we make three claims:
+In this paper, we present our approach to Track~1 of the UPAR Challenge 2027. Our model, UniQuery (\cref{fig:arch}), jointly fine-tunes DINOv3 and CLIP, and each encoder has its own query head. Alongside these two query heads, a joint query head combines features from both encoders through one query per attribute, so that each attribute can draw different information from the two encoders. At inference, we average the logits of the three query heads. To evaluate rigorously how effective the method is, we build an evaluation protocol in which every design choice is tested on a dataset held out from training. The main contributions of this paper are below.
 \begin{itemize}
-\item A mix learned on top of the trained separate ensemble does not transfer. Small fusion heads trained on images of the source datasets do not beat the plain logit average in the mean of the PETA and Market held-out datasets.
-\item Learning the mix during training helps, and in our tests it needs fine-tuned encoders. The joint model beats the separate ensemble on both held-out datasets, and this almost always holds in repeated runs of its design. The gain also appears on the hidden test set. With frozen encoders, the joint model falls below DINOv3 fine-tuned alone.
-\item The joint query head adapts the mix to each attribute. For most attributes, its balanced accuracy moves toward that of the better single-encoder query head. On all held-out PETA images, almost every attention head reads only one encoder, and the number of attention heads that read each encoder changes from attribute to attribute.
+\item We propose UniQuery, which fine-tunes DINOv3 and CLIP together and lets one query per attribute decide how to mix the two encoders. It outperforms an ensemble of independently fine-tuned encoders trained with the same loss on both held-out datasets, and it is also above the ensemble on the hidden test set, by a small margin. The gain needs the joint query head, because when it is removed at inference, the average of the other two query heads does not beat the ensemble.
+\item We show that, in our experiments, the mix needs to be learned together with fine-tuning the encoders. Fusion heads trained on top of independently fine-tuned encoders do not beat a plain logit average in the mean over the two held-out datasets, and with frozen encoders UniQuery falls below a single fine-tuned DINOv3.
+\item We analyze how the joint query head mixes the encoders. Each of its attention heads reads almost only the tokens of one encoder, and the number of attention heads given to DINOv3 or CLIP changes with the attribute. For most attributes, the joint query head is more accurate than the average of the two single-encoder query heads, and for attributes other than colors it often matches or beats the better one.
 \end{itemize}
 
 %=====================================================================
 \section{Related work}
 \label{sec:related}
 
-\paragraph{Pedestrian attribute recognition across domains.} Most pedestrian attribute methods are built and tested within one dataset. They treat the task as multi-label classification with losses weighted by attribute frequency~\cite{deepmar}, borrow query-based heads from multi-label classification~\cite{q2l,mldecoder}, or add language through prompts made for each image~\cite{evsitp}, descriptions of each pedestrian~\cite{jiell} or CLIP features~\cite{promptpar}. Gains measured within one dataset can be fragile: Jia~\etal~\cite{rethinkpar} showed that many of them disappear when the same people no longer appear in both training and test images. UPAR~\cite{upar} merged the attribute sets of several datasets into 40 binary attributes, so that a model can be trained on some datasets and tested on another, and AttriVision~\cite{attrivision} uses CLIP features to improve generalization in this setting. The UPAR challenge~\cite{upar23,upar24} tests models on cameras that are absent from training, and its 2024 report found that diverse training data let large models generalize better~\cite{upar24}. We therefore build on large pretrained encoders and judge every design choice on a dataset that is held out from training.
+Cross-domain and unified learning have attracted researchers because high accuracy on an individual PAR dataset does not guarantee reliable performance in a new environment~\cite{upar,rethinkpar}. At the representation level, ASRL~\cite{asrl} reduces the classifier confusion caused by attribute correlations, by using one feature per attribute and a fixed orthogonal classifier. AttriVision~\cite{attrivision} fine-tunes both CLIP encoders so that an image embedding is close to the embeddings of short sentences describing its attribute values, and predicts each attribute by cosine similarity. Like AttriVision, UniQuery uses CLIP text embeddings, but it keeps the text encoder frozen. It only adds a text score to the logits of the CLIP query head, and this score comes from the similarity of the image to attribute sentences.
 
-\paragraph{Foundation encoders.} Visual foundation encoders differ in how they are pretrained. Self-supervised encoders such as DINOv3~\cite{dinov3} give strong dense features. Image-text encoders such as CLIP~\cite{clip} and its successors~\cite{metaclip,metaclip2,dfn,evaclip,siglip2,pe} align images with captions that name colors, clothes and objects, and the variety of their training data makes them robust to distribution shift~\cite{clipdata}. However, CLIP can miss visual details that a self-supervised encoder separates, and adding self-supervised features corrects part of these errors in multimodal language models~\cite{eyeswide,cambrian}. These findings suggest that the two kinds of encoders are strong on different inputs, so we pair DINOv3 with CLIP.
+A related direction uses images of the target domain. AdaGPAR~\cite{adagpar} keeps its weights fixed at test time and classifies new images by their similarity to prototypes built from reliable target predictions. LDCD-PAR~\cite{ldcd} also trains on unlabeled target images, with an adversarial domain discriminator on local features. In contrast, UniQuery is a domain generalization method and uses no target-domain image.
 
-\paragraph{Combining encoders.} We group the ways of combining pretrained encoders by when the mix of the encoders is learned. The simplest way learns no mix. An ensemble trains each model alone and averages their predictions~\cite{deepens}. It gains most when its members are wrong on different examples~\cite{krogh} and is among the most reliable models under dataset shift~\cite{ovadia}, but it gives every input the same weights. Weight averaging~\cite{soups,diwa,wiseft} removes the extra cost at test time, but it needs models fine-tuned from the same starting point, so it cannot merge two different encoders. A second way learns the mix after training, with a small model on top of the fixed members~\cite{stacking}. A third way learns the mix during training. Multimodal language models let learnable queries attend to the features of several image encoders~\cite{brave,cambrian} or interleave the tokens of CLIP and a self-supervised encoder~\cite{eyeswide}, and BRAVE~\cite{brave} keeps its encoders frozen. For pedestrian attributes, C$^2$T-Net~\cite{c2tnet} also learns the mix during training. Outside these three ways, distillation~\cite{amradio,cradio4,prism} merges several teachers into one student, which keeps the cost of one encoder but must fit all teachers into one feature space. Our joint model learns the mix during training with fine-tuned encoders, and it differs from these methods in two ways. Its mix is set by one query per attribute, so it can change between attributes and between images. Each encoder also keeps its own query head, so the output still contains the average of the two single-encoder query heads.
+Unified learning offers another route to transferable representations. UniHCP~\cite{unihcp} trains one ViT encoder and one decoder for many human-centric tasks, where each task has its own queries and PAR has one query per attribute. The PATH method of HumanBench~\cite{humanbench} pretrains one shared encoder on many human-centric datasets with one projector per task. CLEAR~\cite{clear} reuses its attribute recognition network for person retrieval by passing a sentence that describes the query attributes through a GPT language model and training only small adapters. Like UniHCP and query-based multi-label classifiers~\cite{q2l,mldecoder}, UniQuery uses learned queries that read the image tokens, but the queries of its joint query head read the tokens of two different encoders.
 
-\paragraph{Rare attributes and the decision rule.} Most of the 40 attributes are rare, while mA, one of the two parts of Challenge\_Avg, gives the positives and the negatives of each attribute equal weight. Pedestrian attribute methods therefore weight the loss by attribute frequency~\cite{deepmar}. Earlier UPAR entries also used weights based on the attribute prior or one threshold per attribute~\cite{upar23,upar24}. Per-attribute thresholds add 40 values fitted on source images after training, so they may not hold on new cameras. Logit adjustment~\cite{logitadj} moves the prior correction into the loss instead, and in its standard form its loss is consistent with the balanced error, which is what mA measures for each attribute. We use it during training only and keep one threshold of 0.5 for all attributes at test time.
+The two encoders of UniQuery differ in how they are pretrained. DINOv3~\cite{dinov3} learns by self-supervised learning on unlabeled images and gives high-quality patch features, while CLIP~\cite{clip} and its successors~\cite{metaclip,dfn,evaclip,siglip2,pe} learn to match images with captions on web data. The variety of this web data is the main source of the robustness of CLIP to distribution shift~\cite{clipdata}. Still, CLIP treats some clearly different images as similar, while a self-supervised encoder separates them~\cite{eyeswide}. Adding self-supervised features next to CLIP improves multimodal language models on vision-centric benchmarks~\cite{eyeswide,cambrian}, so we pair DINOv3 with CLIP.
+
+A simple way to combine two encoders is an ensemble. Each encoder is fine-tuned alone into its own model, and the predictions of the two models are averaged at inference~\cite{deepens}. An ensemble only helps on images where the two models predict differently~\cite{krogh}. It also uses the same mix for every attribute. Weight averaging~\cite{soups,wiseft} cannot merge DINOv3 with CLIP, because it needs models with the same starting point. Distillation merges several encoders into one~\cite{amradio}, but the student is still worse than its teachers on some tasks, such as zero-shot classification against its image--text teacher~\cite{amradio,cradio4}. Stacking learns the mix on models that are already trained~\cite{stacking}. In UPAR 2024~\cite{upar24}, C$^2$T-Net~\cite{c2tnet} trained a Swin-B and an EVA ViT-L together and merged them into one vector for all attributes. UniQuery also trains the two encoders together, but each attribute has its own query that sets the mix, and each encoder keeps its own query head.
+
+Attributes also differ in frequency, and most of the 40 attributes have few positive samples. A model trained in the usual way is biased toward predicting such attributes as absent~\cite{logitadj}. This bias lowers the mean balanced accuracy (mA), which averages over attributes the accuracy on positives and the accuracy on negatives with equal weight. It therefore also lowers Challenge\_Avg, the challenge metric, which is the harmonic mean of mA and instance F1. DeepMAR~\cite{deepmar} corrects for this by weighting the loss of each attribute by its positive ratio, and UniQuery also uses these weights. Earlier UPAR entries also tuned one threshold per attribute on validation images of the source domains~\cite{upar24}, so these thresholds may not hold on new cameras. Logit adjustment~\cite{logitadj} adds a shift based on the attribute frequency to the logits inside the training loss, so UniQuery keeps one threshold of 0.5 for all attributes at inference.
 
 %=====================================================================
-\section{Method}
+\section{The proposed method}
 \label{sec:method}
 
-\paragraph{Encoders.} We use DINOv3 ViT-H+/16~\cite{dinov3} with 840M parameters and the OpenAI CLIP ViT-L/14 image encoder~\cite{clip} with 303M parameters, called DINOv3 and CLIP below. Both read a $224\times112$ crop with their own normalization, which gives 98 patch tokens for DINOv3 and 128 for CLIP, plus one CLS token each. The patch embedding and the first eight blocks of each encoder are frozen. The other blocks are fine-tuned with a learning rate of $5\cdot10^{-5}$ for the top block, a layer-wise decay of 0.75 below it, and a ten times higher learning rate for the query heads.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{query_head.pdf}
+\caption{One query head. The three query heads of UniQuery share this design and differ only in the tokens they read. The inset is the attention of the hat query in the DINOv3 query head on the image of \cref{fig:arch}, averaged over the eight attention heads.}
+\label{fig:qhead}
+\end{figure}
 
-\paragraph{Single-encoder query heads.} Each encoder has a query head with one layer~\cite{q2l}, the DINOv3 query head and the CLIP query head. Forty learned attribute queries attend to the CLS and patch tokens of the encoder through cross-attention with eight attention heads. A residual MLP and a layer norm turn each attribute query into an \emph{attribute vector}, and a linear classifier for each attribute maps the attribute vector to a logit. The CLIP query head also adds a zero-shot language score to each logit. This score compares the projected CLS token with one text direction per attribute: the CLIP text embedding of a prompt that describes the attribute, minus the embedding of a neutral prompt. In the separate ensemble, each encoder is fine-tuned alone with its own query head.
+\Cref{fig:arch} shows the architecture of UniQuery. A cropped pedestrian image of $224\times112$ pixels passes through two encoders, DINOv3 ViT-H+/16~\cite{dinov3} and the OpenAI CLIP ViT-L/14 image encoder~\cite{clip}, which are fine-tuned in one network. Three query heads read the tokens of the two encoders in three ways. The DINOv3 and CLIP query heads read only the tokens of their own encoder, and the joint query head reads the tokens of both. Each query head gives 40 logits, one per binary attribute. During training, each query head has its own loss, and at inference the logits of the three query heads are averaged.
 
-\paragraph{Joint query head.} The joint query head lets one attribute query collect evidence from both encoders. It has the same architecture as the single-encoder query heads, but its keys and values are the tokens of both encoders. The two encoders have different widths, so one linear layer $W$ per encoder maps the 99 DINOv3 tokens (1280-d) and the 129 CLIP tokens (1024-d) to 1024 dimensions. A learned source embedding is added to all tokens of each encoder, so that attention can tell the two sets of tokens apart. Each of the 40 attribute queries then attends to all 228 tokens.
+The CLIP query head also uses the image--text matching that CLIP learned in pretraining. For the hat attribute, CLIP compares the image with the sentence \texttt{a person wearing a hat or a cap} and with the sentence \texttt{a person}. The text score of this attribute is the similarity of the image to the first sentence minus its similarity to the second (\cref{fig:zsidea}). This score is added to the hat logit that the CLIP query head computes from the image tokens. The subtraction aims to remove the similarity to \texttt{a person} that every attribute sentence shares. The addition aims to bring the knowledge of CLIP about the attribute into the logit computed from the image tokens.
 
-\paragraph{Training and decision rule.} The three query heads use the same loss, and the total loss is their sum:
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\linewidth]{text_idea.pdf}
+\caption{The idea of the text score for the hat attribute, on PETA validation images. The text score of an image is the vertical distance from its point to the diagonal. The image without a hat is more similar to the hat sentence than the image with a hat, but it lies below the diagonal and so gets a lower text score.}
+\label{fig:zsidea}
+\end{figure}
+
+The tokens of DINOv3 and CLIP have different widths, so before the joint query head each kind of token passes through its own linear layer to reach a common width. The tokens of the two encoders are then concatenated into one sequence that the joint query head reads. Inside, each query head consists of a cross-attention layer, a multilayer perceptron (MLP) and a classifier~\cite{q2l,mldecoder} (\cref{fig:qhead}).
+
+During training, the loss in \cref{eq:loss} is applied to all three query heads:
 \begin{equation}
-L=\sum_{k\in\{D,J,C\}}\;\sum_{a=1}^{40} m_a\,w_a\,\mathrm{BCE}\big(z_{k,a}+s_a,\;y_a\big),
+L=\sum_{k\in\{D,J,C\}}\;\sum_{a=1}^{40} m_a\,w_a(y_a)\,\mathrm{BCE}\big(z_{k,a}+s_a,\;y_a\big),
 \label{eq:loss}
 \end{equation}
-where $k$ is the DINOv3 ($D$), joint ($J$) or CLIP ($C$) query head, BCE is the binary cross-entropy, $z_{k,a}$ is the logit of query head $k$ for attribute $a$, $y_a$ is the label smoothed by 0.05, $w_a$ is the DeepMAR weight~\cite{deepmar}, and $m_a$ is a mask that removes the attributes that the source dataset of the image does not label. The shift $s_a=\tau\log\frac{p_a}{1-p_a}$ uses the training prior $p_a$ with $\tau=0.32$ and is used only during training~\cite{logitadj}. For a rare attribute, $s_a$ is negative, so the model has to raise the raw logit to fit the labels. Without the shift at test time, rare attributes are predicted more often, which fits a metric that gives positives and negatives equal weight. At test time, attribute $a$ is predicted as present when
-\begin{equation}
-\sigma\big(\tfrac{1}{3}(z_{D,a}+z_{J,a}+z_{C,a})\big)>0.5 .
-\label{eq:rule}
-\end{equation}
-The same rule is used for all 40 attributes. No offset and no per-attribute threshold is added after training.
+in which $s_a=\tau\log\frac{p_a}{1-p_a}$, $p_a$ is the frequency of attribute $a$ in the training data, and $\tau=0.32$. The shift $s_a$ applies logit adjustment~\cite{logitadj} and is used only in training. The DeepMAR weight $w_a(y_a)$~\cite{deepmar} is $e^{1-p_a}$ for positives and $e^{p_a}$ for negatives, which moves the decision threshold by $1-2p_a$ on the logit scale. The loss therefore shifts the decision in two parts, $1-2p_a$ from $w_a$ and a part from $s_a$. We chose $\tau=0.32$ so that their sum fits, by least squares over the 40 attributes, the total shift of a post-hoc rule. In this rule, a model trained with the DeepMAR weights alone adds $0.42\,\big(\log\frac{1-p_a}{p_a}-(1-2p_a)\big)$ to its logits after training. The coefficient 0.42 of this rule was chosen on the leave-one-dataset-out runs. We denote by $D$ the DINOv3 query head, $J$ the joint query head, and $C$ the CLIP query head. Here, $z_{k,a}$ denotes the logit predicted by query head $k$ for attribute $a$, and $y_a$ is the target label after applying label smoothing with a factor of 0.05. The mask $m_a$ excludes attributes that are not annotated in the dataset to which the input image belongs.
 
-\paragraph{Choice of $\tau$.} Let $L_a=\log\frac{1-p_a}{p_a}$. The DeepMAR weights already shift the decision for attribute $a$ by $d_a=1-2p_a$, and the shift $s_a$ moves it further in the same direction, so training with \cref{eq:loss} shifts the decision by $d_a+\tau L_a$ in total. On the validation splits, the best bias for each attribute on top of DeepMAR logits is close to $0.42\,(L_a-d_a)$, so the best total shift is $d_a+0.42\,(L_a-d_a)$. Matching the two shifts over the 40 attributes in the least-squares sense gives $\tau=0.32$. Using $\tau=0.42$ directly would shift rare attributes too far and predict too many positives.
+During training, we freeze the patch embedding and the first eight blocks of each encoder and fine-tune the rest with AdamW for three epochs. We use a batch size of 64 and an exponential moving average (EMA) of the weights. The learning rate is $5\times10^{-5}$ at the top block, decays by 0.75 per block below, and is ten times higher in the query heads. The submitted model is trained on the training and validation splits of all three datasets. At inference, the average logit of the three query heads passes through a sigmoid, and an attribute is predicted as present when the probability exceeds 0.5. Like an ensemble of the two separately trained encoders, UniQuery needs only two encoder forward passes per image. Its measured latency is about 3.0\,ms per image on an NVIDIA RTX 5090 GPU with batches of 128 images.
 
 %=====================================================================
 \section{Experiments}
 \label{sec:exp}
 
-The experiments follow the argument of the introduction. We first test why two different encoders are needed and whether their mix can be learned after training. We then compare the joint model with the separate ensemble, test the role of fine-tuning and the choice of encoders, and test whether the gain repeats. Finally, we analyze the joint query head and check the gain on the hidden test set.
+We evaluated independently trained models, each query head of UniQuery, and UniQuery with its three query heads averaged. The average of the three query heads reaches a higher mean Challenge\_Avg than each query head alone and than the independent ensemble, so we use it for our final submission.
 
-\subsection{Protocol}
-We use a leave-one-dataset-out protocol. A model is trained on the training splits of two source datasets and tested on the validation split of the third dataset, the held-out dataset, which it never sees in training. We report the two folds that hold out PETA (6,963 images) and Market-1501 (16,458 images). Each fold has 88k to 89k training images. We skip the fold that holds out PA100k, because its training set would have only 18.7k images. The metric is Challenge\_Avg, the harmonic mean of the mean balanced accuracy (mA) and the instance F1, given in points ($\times100$, higher is better). All models train for three epochs with batch size 64, AdamW, an exponential moving average (EMA) of the weights and bf16. A run is one training of one configuration with one seed, and each run uses one RTX 5090 GPU. Evaluation uses a single forward pass without flipping, as in the submission, and the joint model needs 3.04\,ms per image on this GPU. Results are for one seed unless stated otherwise.
+\paragraph{Protocol.} To mimic the unseen cameras of the hidden test set, we use a leave-one-dataset-out protocol. In each fold, one dataset is held out completely, and the model sees none of its images during training. The model is trained on the training splits of the other two datasets and scored on the validation split of the held-out dataset. The PETA fold trains on PA100k and Market-1501 and is scored on the 6,963 PETA validation images. The Market fold trains on PA100k and PETA and is scored on the 16,458 Market-1501 validation images. We do not use the fold that holds out PA100k, because only 18.7k training images would remain. The metric is Challenge\_Avg, in percent. Fold models are trained like the submitted model, except that their training data exclude the validation splits. Each image passes through the model once, without flipping, as in the submission. Results are for one seed unless stated otherwise. The factor 0.42 used to set $\tau$ and the encoder paired with DINOv3 were chosen on these same folds, so the fold scores may be slightly optimistic for these choices. The hidden test set is the only evaluation that these choices do not affect.
 
-\subsection{Why two different encoders?}
-\label{sec:two}
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Model & PETA & Market & Avg. \\
+\midrule
+Independently trained DINOv3 & 81.46 & 86.31 & 83.89 \\
+Independently trained CLIP & 81.44 & 85.50 & 83.47 \\
+Ensemble of the two encoders, seed 1 & 82.45 & 86.30 & 84.38 \\
+Ensemble of the two encoders, seed 2 & 82.29 & 86.33 & 84.31 \\
+\midrule
+UniQuery, DINOv3 query head only & 81.26 & 86.07 & 83.67 \\
+UniQuery, CLIP query head only & 81.45 & 85.56 & 83.51 \\
+UniQuery, joint query head only & 82.26 & 86.27 & 84.26 \\
+UniQuery, DINOv3 + CLIP query heads & 82.24 & 86.32 & 84.28 \\
+UniQuery, three query heads averaged & \textbf{82.54} & 86.39 & 84.46 \\
+\midrule
+Variant, seed 1 & 82.53 & \textbf{86.44} & \textbf{84.49} \\
+Variant, seed 2 & 82.51 & 86.32 & 84.42 \\
+Variant with two joint query heads & 82.51 & 86.43 & 84.47 \\
+\bottomrule
+\end{tabular}
+\caption{Held-out Challenge\_Avg with the same loss as in \cref{eq:loss}. Avg.\ is the mean of the two folds, and the submitted setting is UniQuery with its three query heads averaged. The row ``DINOv3 + CLIP query heads'' averages these two query heads of the same model, without the joint query head. The variant adds a text score for clothing colors on the upper or lower body region, with a different set of sentences, and in training hides each encoder from the joint query head with probability 0.25.}
+\label{tab:main}
+\end{table}
+
+\paragraph{UniQuery versus the independent ensemble.} \Cref{tab:main} compares UniQuery with an ensemble of the two encoders trained independently, with the same encoder architectures and the same loss. The logit average of the three query heads of UniQuery beats both seeds of the ensemble on both folds. This gain needs the joint query head. When the joint query head is removed at inference, the average of the DINOv3 and CLIP query heads of UniQuery is no longer above the ensemble. Used alone, the joint query head is above each single-encoder query head but it does not beat the ensemble either. The gain appears only when the joint query head is averaged with the two single-encoder query heads.
+
+\paragraph{Consistency.} UniQuery beats the ensemble by only 0.08 to 0.15 points in the mean, close to the 0.07-point gap between the two seeds of the ensemble. We therefore check whether the gain repeats in other training runs. The last three rows of \cref{tab:main} are three runs of a UniQuery variant with a few small changes, given in the table caption, not reruns of UniQuery with other seeds. All four runs, UniQuery and the three runs of the variant, have a two-fold mean above both seeds of the ensemble. Fold by fold, the four runs win all 8 comparisons with the two ensemble seeds on PETA and 7 of 8 on Market.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{pick.pdf}
+\caption{The joint query head next to the two single-encoder query heads, for the attributes on which these two differ by at least 2 points and that have at least 50 positive images. Values are means over two seeds of the variant in \cref{tab:main}.}
+\label{fig:pick}
+\end{figure}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{routing_v2.pdf}
+\caption{How the joint query head uses the two encoders. (a) Attention of the attention heads that read DINOv3 and of those that read CLIP, on eight validation images that the submitted model saw in training. (b, c) Statistics over the 6,963 held-out PETA images, for the PETA-fold model.}
+\label{fig:routing}
+\end{figure*}
+
+\paragraph{Attribute-specific mixing.} The joint query head does not mix the two encoders with one ratio for all attributes. \Cref{fig:pick} compares it with the two single-encoder query heads of the UniQuery variant in \cref{tab:main}. Over all attributes, both seeds and both folds, the joint query head is above the mean of the two single-encoder query heads in 82\% of cases. For attributes other than colors, such as age, gender, hair, clothing type and accessories, it matches or beats the better single-encoder query head in 69\% of cases, for example for backpack, sunglasses and trousers/shorts. For clothing colors, this happens in only 40\% of cases, and the joint query head often lies between the two. Its attention shows that it shares the work between the encoders by attribute (\cref{fig:routing}). On the held-out PETA images, in 93\% of the cases where an attention head reads an image for one attribute, more than 98\% of its attention falls on the tokens of a single encoder (\cref{fig:routing}b). We can therefore count, for each attribute, how many of the eight attention heads read DINOv3 (\cref{fig:routing}c). An attention head reads DINOv3 if more than half of its attention falls on DINOv3 tokens. Backpack uses 6.4 of the eight attention heads on DINOv3 on average, while red and pink upper clothing use only about 2.6. In general, lower-body and accessory attributes rely more on DINOv3, and upper-body colors rely more on CLIP.
+
+\paragraph{Why DINOv3 and CLIP?} \Cref{tab:two} shows that the second encoder should differ from the first. A second fine-tuned copy of the same encoder adds at most 0.10 points in the mean, while a different encoder adds 0.4 to 0.6 points. This gain comes from PETA. On Market, adding CLIP helps much less, and with $\tau=0.42$ the pair of DINOv3 and CLIP is even below DINOv3 alone. Our hypothesis is that two encoders pretrained in different ways are wrong on the same image less often than two fine-tuned copies of one encoder. To test this, we take the image--attribute pairs that one model gets wrong, measure the share that the other model also gets wrong, and average over both directions. Two fine-tuned copies of the same encoder in \cref{tab:two} share 89\% to 93\% of their errors, while DINOv3 and CLIP share only 72\% on PETA and 77\% on Market-1501. To choose the encoder next to DINOv3, we tried 12 encoders on the PETA fold: CLIP, AIMv2~\cite{aimv2}, EVA02-CLIP~\cite{evaclip}, MetaCLIP2~\cite{metaclip2}, MobileCLIP2~\cite{mobileclip2}, DFN-CLIP~\cite{dfn}, two PE models~\cite{pe} and four SigLIP2 models~\cite{siglip2}. Each is fine-tuned alone and its logits are averaged with those of DINOv3. Every one of them shares only 66\% to 72\% of its errors with DINOv3, so the Challenge\_Avg of the pair follows that of the second encoder alone. Alone, CLIP is at least 0.5 points above every other encoder, and over five CLIP runs the pair of DINOv3 and CLIP reaches 81.04\% to 81.23\%. Only the pair with AIMv2-L falls in this range, and the other 10 encoders give lower pairs. The training recipe was tuned on DINOv3 and CLIP, so it may suit the other encoders less well. Inside UniQuery, replacing CLIP with SigLIP2-L/16 or C-RADIOv4-H~\cite{cradio4}, or replacing DINOv3 with C-RADIOv4-H, lowers the two-fold mean of Challenge\_Avg (\cref{tab:swap}). The drop comes mostly from PETA. On Market, the pair with SigLIP2-L is also lower, while the two pairs with C-RADIOv4-H are slightly above UniQuery.
 
 \begin{table}[t]
 \centering
@@ -116,7 +168,7 @@ We use a leave-one-dataset-out protocol. A model is trained on the training spli
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lccc@{}}
 \toprule
-Encoders (logits averaged) & PETA & Market & Mean \\
+Encoders (logits averaged) & PETA & Market & Avg. \\
 \midrule
 \multicolumn{4}{@{}l}{\emph{Logit-adjusted loss, $\tau=0.42$}} \\
 CLIP & 81.79 & 85.72 & 83.75 \\
@@ -128,79 +180,38 @@ DINOv3 + CLIP & \textbf{82.29} & 86.49 & \textbf{84.39} \\
 CLIP & 80.68 & 85.01 & 82.84 \\
 CLIP + CLIP (two seeds) & 80.69 & 85.12 & 82.90 \\
 DINOv3 & 80.49 & 85.31 & 82.90 \\
-DINOv3 + DINOv3 (two settings) & 80.66 & 85.35 & 83.00 \\
+DINOv3 + DINOv3 (two runs) & 80.66 & 85.35 & 83.00 \\
 DINOv3 + CLIP & \textbf{81.08} & \textbf{85.54} & \textbf{83.31} \\
 \bottomrule
 \end{tabular}
-\caption{One encoder, two fine-tuned copies of one encoder, or two different encoders, each fine-tuned separately. Held-out Challenge\_Avg in points. The two CLIP copies differ in seed, and the two DINOv3 copies differ in training settings. Two copies cost two encoder passes whether the encoders are different or not. A second copy of the same encoder hardly changes the mean, while a different encoder raises it.}
+\caption{Held-out Challenge\_Avg of separately fine-tuned encoders with averaged logits. These runs come from an earlier stage, trained with $\tau=0.42$ instead of 0.32 in \cref{eq:loss}, or with weighted BCE (\cref{eq:loss} without $s_a$), because only this stage has two fine-tuned copies of the same encoder. The two DINOv3 copies are two runs of the same recipe.}
 \label{tab:two}
 \end{table}
 
-This experiment tests whether the second encoder of a two-encoder ensemble has to differ from the first. Any such ensemble costs two encoder passes, so a second fine-tuned copy of the same encoder is the natural alternative. \Cref{tab:two} uses runs from an earlier stage of this work, trained with $\tau=0.42$ or with weighted BCE (\cref{eq:loss} without the shift $s_a$), because only this stage has two fine-tuned copies of the same encoder. With both losses, a second copy of the same encoder adds at most 0.10 points in the mean, while a different encoder adds 0.4 to 0.6 points. Compared with DINOv3 alone, most of this gain comes from PETA, the harder held-out dataset. This suggests that two copies of one encoder are mostly wrong on the same images, while DINOv3 and CLIP are wrong on different images. The two encoders are also strong on different attributes. For the two encoders of the separate ensemble with seed 2, DINOv3 beats CLIP by more than 1 point of balanced accuracy on 12 attributes of PETA, and CLIP beats DINOv3 by more than 1 point on 10 others. On some color attributes, the gap exceeds 10 points in both directions. The next experiment therefore tests whether a separate mix for each attribute can be learned after training.
-
-\subsection{Can the mix be learned after training?}
-\label{sec:frozen}
-
 \begin{table}[t]
 \centering
 \small
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{2pt}
 \begin{tabular}{@{}lcccc@{}}
 \toprule
-Fusion & Params & PETA & Market & Mean \\
+Mix of the two models & PETA & Market & Avg. & Source \\
 \midrule
-Logit average & 0 & \textbf{82.45} & 86.30 & \textbf{84.38} \\
-Per-attribute logit weights & 40 & 82.43 & \textbf{86.31} & 84.37 \\
-Classifier on DINOv3 vectors & 150k & 81.15 & 85.99 & 83.57 \\
-Classifier on CLIP vectors & 150k & 81.55 & 86.06 & 83.81 \\
-Concatenation + MLP & 155k & 81.27 & 85.92 & 83.60 \\
-Per-attribute feature gate & 150k & 81.25 & 85.95 & 83.60 \\
-Per-image feature gate & 155k & 81.01 & 85.86 & 83.44 \\
+Logit average, nothing learned & \textbf{82.45} & 86.30 & \textbf{84.38} & 89.46 \\
+Learned ratio per attribute & 82.43 & \textbf{86.31} & 84.37 & 89.49 \\
+\midrule
+\multicolumn{5}{@{}l}{\emph{Logit average plus a correction learned from}} \\
+\quad DINOv3 attribute vectors & 81.15 & 85.99 & 83.57 & 90.93 \\
+\quad CLIP attribute vectors & 81.55 & 86.06 & 83.81 & 90.52 \\
+\quad both, concatenated into an MLP & 81.27 & 85.92 & 83.60 & 91.02 \\
+\quad both, ratio per attribute & 81.25 & 85.95 & 83.60 & 90.97 \\
+\quad both, ratio per image & 81.01 & 85.86 & 83.44 & 91.14 \\
 \bottomrule
 \end{tabular}
-\caption{Fusion heads trained on top of the separate ensemble, whose fine-tuned encoders stay fixed. Except for the per-attribute logit weights, each fusion head reads attribute vectors and adds a correction to the averaged logits. The two classifiers read the vectors of one encoder, and the other fusion heads read both. All fusion heads are trained on validation images of the source datasets and tested on the held-out dataset.}
+\caption{Learning the mix on top of the two separately fine-tuned models of the ensemble, which stay fixed (held-out Challenge\_Avg). Corrections are computed by a linear layer and start at zero. They are trained with the loss of \cref{eq:loss} on 85\% of the validation images of the two source datasets (about 22k images in the PETA fold and 14k in the Market fold). The Source column is the two-fold mean Challenge\_Avg on the remaining 15\% of source images, which the fusion heads do not see in training.}
 \label{tab:frozen}
 \end{table}
 
-This experiment tests whether a mix learned on top of the separate ensemble can replace its equal mix. We kept both fine-tuned encoders of the separate ensemble fixed and trained six fusion heads on their outputs (\cref{tab:frozen}). The simplest one learns one weight per attribute for the two logits. The others read attribute vectors and add a correction to the averaged logits. All corrections start at zero and are trained with the logit-adjusted loss of \cref{eq:loss}. To keep the fusion data unseen by the encoders, we trained the fusion heads on the validation images of the two source datasets.
-
-No fusion head beats the plain average in the mean. Per-attribute logit weights stay close to equal, and every fusion head that reads attribute vectors loses 0.6 to 0.9 points. The reason is not that the fusion heads fail to fit. On source-dataset images held out from fusion training, the same fusion heads raise Challenge\_Avg from 89.2 to about 91.3 points in the PETA fold. The fusion heads therefore learn corrections that only work on the source datasets. The most flexible one, the per-image gate, loses the most on the held-out dataset. The fold that holds out PA100k, which our protocol leaves out, shows the limit of this result. In that fold, the encoders are trained on few images, and the fusion heads see about 20k labeled images that the encoders never saw. Every fusion head that reads attribute vectors then beats the plain average by 2.0 to 2.7 points, but a classifier on CLIP vectors alone already gets most of this gain. The gain therefore comes from the extra labeled images, not from a better mix of the two encoders. When the encoders are trained on enough data, a mix learned after training does not transfer, so the next experiment tests the other option: learning the mix during training.
-
-\subsection{Joint model versus separate ensemble}
-\label{sec:main}
-
-\begin{table}[t]
-\centering
-\small
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}lccc@{}}
-\toprule
-Model & PETA & Market & Mean \\
-\midrule
-\multicolumn{4}{@{}l}{\emph{Encoders fine-tuned separately}} \\
-DINOv3 alone & 81.46 & 86.31 & 83.89 \\
-CLIP alone & 81.44 & 85.50 & 83.47 \\
-Separate ensemble & 82.45 & 86.30 & 84.38 \\
-Separate ensemble, seed 2 & 82.29 & 86.33 & 84.31 \\
-\midrule
-\multicolumn{4}{@{}l}{\emph{Encoders fine-tuned together (joint model)}} \\
-DINOv3 query head & 81.31 & 86.17 & 83.74 \\
-CLIP query head & 81.72 & 85.56 & 83.64 \\
-Joint query head & 82.10 & \textbf{86.41} & 84.26 \\
-Single-encoder query heads averaged & 82.46 & 86.35 & 84.41 \\
-All three query heads averaged & \textbf{82.55} & 86.37 & \textbf{84.46} \\
-\bottomrule
-\end{tabular}
-\caption{Held-out Challenge\_Avg in points of the separate ensemble and the joint model, both trained with the loss of \cref{eq:loss}. Both use two encoder passes at test time. Mean is the mean of the two folds. Rows without a seed use seed 1. The last row is the submitted setting.}
-\label{tab:main}
-\end{table}
-
-This experiment tests our main claim, that a mix learned during training transfers to the held-out dataset. \Cref{tab:main} compares the joint model with the separate ensemble under the loss of \cref{eq:loss}. The average of the three query heads of the joint model gives the best mean and is above both seeds of the separate ensemble on both folds. Joint training also changes the single-encoder query heads. Compared with separate training, they change only within the gap between two seeds, but their average already matches the separate ensemble.
-
-The joint query head is the best single query head in \cref{tab:main}. Inside the joint model, the three query heads see the same encoders and use the same loss. They differ only in the tokens they read. In the mean of the two folds, the joint query head is 0.52 points above the DINOv3 query head, the better single-encoder query head, and 0.37 points above DINOv3 fine-tuned alone. It is 0.05 to 0.12 points below the separate ensemble, depending on the seed. The joint model fine-tunes both encoders, so the next experiment tests whether this fine-tuning is needed.
-
-\subsection{Must the encoders be fine-tuned, and which ones?}
-\label{sec:swap}
+\paragraph{Can the mix be learned after training?} The independent ensemble mixes its two models by averaging their logits, with the same equal ratio for every attribute. We test whether a better mix can be learned after the two models are trained, without joint training as in UniQuery. The two models stay fixed, and only a small fusion head on top of their outputs is trained (\cref{tab:frozen}). The first fusion head only learns one mixing ratio of the two logits per attribute. The other five add a correction to the logit average, computed from the attribute vectors of the query heads. An attribute vector is the vector that a query head produces for one attribute just before its classifier. In the two-fold mean, no fusion head beats the plain logit average, and the five with a correction lower Challenge\_Avg by 0.6 to 0.9 points. Their failure does not come from poor learning. On source images that they did not see in training, these five beat the logit average by 1.1 to 1.7 points. For the fusion heads we tried, a mix learned after training therefore only fits the source datasets and does not carry over to a new dataset. This is why UniQuery learns its mix while it trains the two encoders.
 
 \begin{table}[t]
 \centering
@@ -208,125 +219,62 @@ The joint query head is the best single query head in \cref{tab:main}. Inside th
 \setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{@{}llccc@{}}
 \toprule
-Encoder pair & Training & PETA & Market & Mean \\
+Encoder pair & Training & PETA & Market & Avg. \\
 \midrule
-DINOv3 + CLIP (submitted) & fine-tuned & \textbf{82.55} & 86.37 & \textbf{84.46} \\
+DINOv3 + CLIP (submitted) & fine-tuned & \textbf{82.54} & 86.39 & \textbf{84.46} \\
 DINOv3 + CLIP & frozen & 81.07 & 85.80 & 83.43 \\
 \midrule
-C-RADIOv4-H + CLIP & fine-tuned & 81.87 & \textbf{86.43} & 84.15 \\
-DINOv3 + C-RADIOv4-H & fine-tuned & 82.11 & -- & -- \\
-DINOv3 + SigLIP2-L & fine-tuned & 81.81 & -- & -- \\
+C-RADIOv4-H + CLIP & fine-tuned & 81.87 & 86.43 & 84.15 \\
+DINOv3 + C-RADIOv4-H & fine-tuned & 82.11 & \textbf{86.50} & 84.31 \\
+DINOv3 + SigLIP2-L & fine-tuned & 81.81 & 86.07 & 83.94 \\
 \bottomrule
 \end{tabular}
-\caption{Freezing or replacing the encoders of the joint model. Held-out Challenge\_Avg in points. All runs use the recipe of the submitted model. Two runs stopped after the PETA fold, which already placed them below the submitted model, and -- marks the fold they did not run.}
+\caption{Freezing or replacing the encoders of UniQuery (held-out Challenge\_Avg). With frozen encoders, only 32.6M parameters are trained.}
 \label{tab:swap}
 \end{table}
 
-This experiment asks two questions about the encoders of the joint model. The first is whether they must be fine-tuned at all. When both encoders stay frozen and only the three query heads and the maps $W$ are trained (32.6M parameters), the joint model loses 1.0 point in the mean and falls below DINOv3 fine-tuned alone (\cref{tab:swap,tab:main}). The CLIP query head loses most, 2.8 points, while the DINOv3 query head loses 0.6 points. DINOv3 features therefore suffer much less from freezing than CLIP features. Training the joint model with frozen encoders for ten epochs instead of three lowers its mean further, to 83.11 points. Query-based fusion of frozen encoders, as in multimodal language models~\cite{brave}, is therefore not enough in our setting.
-
-The second question is whether newer encoders make better partners. We replaced one encoder at a time with SigLIP2-L/16~\cite{siglip2} or with C-RADIOv4-H~\cite{cradio4}, which distills several teachers, among them SigLIP2 and DINOv3, into one model. No pair beats DINOv3 and CLIP on PETA. The only pair tested on both folds, C-RADIOv4-H with CLIP, is also lower in the mean. Fine-tuned alone, C-RADIOv4-H reaches 83.88 points in the mean, level with DINOv3 alone (\cref{tab:main}), but it pairs worse with CLIP, and the loss again comes from PETA. SigLIP2 lowers both the mean AUC and the precision on PETA. Its query head predicts glasses on 22\% of the PETA images, against 14\% for the CLIP query head of joint model (b) in \cref{tab:var} and 7\% in the labels, with similar errors for baldness and old age. These head-region attributes cover one or two tokens in our $224\times112$ crops, while the SigLIP2 checkpoint we used was pretrained at $384\times384$. We did not test whether a larger input closes this gap.
-
-\subsection{Does the gain repeat?}
-\label{sec:variants}
-
-\begin{table}[t]
-\centering
-\small
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}lccc@{}}
-\toprule
-Model & PETA & Market & Mean \\
-\midrule
-Separate ensemble, seed 1 & 82.45 & 86.30 & 84.38 \\
-Separate ensemble, seed 2 & 82.29 & 86.33 & 84.31 \\
-\midrule
-(a) Joint model (submitted) & 82.55 & 86.37 & 84.46 \\
-(b) (a) + color anchors, token drop & 82.53 & 86.44 & 84.49 \\
-(c) (b), second seed & 82.51 & 86.32 & 84.42 \\
-(d) (b) + second joint query head & 82.51 & 86.43 & 84.47 \\
-\midrule
-(e) (b) + mid-level tokens & 82.37 & 86.38 & 84.38 \\
-(f) (b) + text-initialized queries & 82.23 & 86.48 & 84.36 \\
-(g) (a) + flatter clothing attention & 82.39 & 86.35 & 84.37 \\
-\bottomrule
-\end{tabular}
-\caption{Runs of the joint model on the held-out datasets, Challenge\_Avg in points. Runs (a)--(d) keep the design of the joint query head, and runs (e)--(g) change the joint query head itself.}
-\label{tab:var}
-\end{table}
-
-This experiment tests whether the gain in \cref{tab:main} is real or due to chance. The gain is close to the difference between two seeds of the same model. Runs (b) and (c) in \cref{tab:var}, two seeds of the joint model, differ by 0.07 points in the mean, and the two seeds of the separate ensemble also differ by 0.07 points. We therefore ask whether the gain repeats, not how large it is. Run (b) adds two details to the submitted model (a). Its CLIP query head also compares the 24 color attributes with the patch features of CLIP, and during training the joint query head drops all tokens of one encoder with probability 0.25. Run (c) is run (b) with another seed, and run (d) gives run (b) a second joint query head. Against the two seeds of the separate ensemble, these four runs win all 8 comparisons on PETA and 7 of 8 on Market. The only loss is run (c) on Market, 0.01 points below seed 2. In the mean, the four runs are about 0.15 points above the mean of the two seeds on PETA and 0.08 points above it on Market. None of the added details is clearly better than run (a).
-
-Runs (e)--(g) change the joint query head itself. They add mid-level tokens, start the attribute queries from CLIP text embeddings, or force flatter attention for the 28 clothing queries. On PETA, each of these runs is below all four runs that keep the design, and their mean falls back to the level of the separate ensemble. None of these changes inside the joint query head adds to the gain of run (a).
-
-\subsection{How does the joint query head use the two encoders?}
-\label{sec:routing}
+\paragraph{Must the encoders be fine-tuned?} BRAVE~\cite{brave} keeps several pretrained encoders frozen and trains only a module whose learned queries read their tokens. We tried this with UniQuery by freezing both encoders and training only the three query heads and the two linear layers. UniQuery then loses 1.0 point in the mean and falls below independently fine-tuned DINOv3 (\cref{tab:swap}). The CLIP query head loses 2.7 points, while the DINOv3 query head loses only 0.6 points. In this task, the encoders therefore need fine-tuning, and freezing hurts CLIP more than DINOv3.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{pick.pdf}
-\caption{The joint query head moves toward the better single-encoder query head. One point per attribute and run, with balanced accuracy measured on the held-out dataset. The x-axis is the size of the gap between the DINOv3 and CLIP query heads of the same joint model, and the y-axis is the gain of the joint query head over their mean. Points exactly on the horizontal line equal the mean of the two single-encoder query heads, and points exactly on the dashed line equal the better one. Diamonds are means of the points in four ranges of the x-axis, with 95\% bootstrap intervals that resample attributes. Data from runs (b) and (c) of \cref{tab:var}, two seeds of one design, on both folds.}
-\label{fig:pick}
+\includegraphics[width=0.74\linewidth]{text_auc.pdf}
+\caption{Zero-shot AUC of the text score on validation images, one point per attribute. Points more than 0.05 below the diagonal are named.}
+\label{fig:zsauc}
 \end{figure}
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\linewidth]{routing.pdf}
-\caption{How the joint query head uses the two encoders on the image of \cref{fig:arch}. (a) For three attribute queries, the summed attention of the attention heads that read DINOv3 tokens (blue) and of those that read CLIP tokens (orange), drawn on the patch grid of each encoder with one cell per token. (b) Share of attention that each of the eight attention heads puts on DINOv3 tokens, for all 40 attributes. Blue cells are attention heads that read DINOv3, orange cells are attention heads that read CLIP, and pale cells mix both. The numbers on top count the attention heads that read DINOv3, black lines separate groups of attributes, and the attributes of (a) are in bold.}
-\label{fig:routing}
-\end{figure*}
-
-This analysis looks at how the joint query head turns two encoders into a better prediction. \Cref{fig:pick} compares, for each attribute, the joint query head with the two single-encoder query heads of the same model. If the joint query head only averaged them, the points would lie exactly on the horizontal line. If it always followed the better one, the points would lie exactly on the dashed line. Of the 148 points, 82\% lie above the horizontal line, and about half lie on or above the dashed line. The joint query head also gains more where the gap between the two single-encoder query heads is larger. The Pearson correlation between its gain and the gap is 0.52, driven mostly by a few attributes with large gaps. For runs (b) and (c), the joint query head is within about 0.25 points of mA of a choice that knows in advance which single-encoder query head is better for each attribute on PETA, and it matches or beats that choice on Market. For two retrained copies of the submitted design, it is 0.3 to 0.9 points below this choice. A fixed average cannot make this choice, and the joint query head makes it without any information about the held-out dataset.
-
-\Cref{fig:routing} shows how this works on the image of \cref{fig:arch}. Each attention head of the joint query head could mix the tokens of both encoders, but it almost never does. Of the 320 pairs of attention head and attribute, 312 put more than 99\% of their weight on one encoder, and the other eight put at least 71\% on one encoder (\cref{fig:routing}b). The encoder that an attention head reads is not fixed. It changes with the attribute, and three to six of the eight attention heads read DINOv3, depending on the attribute. In \cref{fig:routing}a, the DINOv3 attention heads of the hat query look at the top of the head, and its CLIP attention heads look at the face and the shoulder just below it. For the upper white attribute, the DINOv3 attention heads look at the jacket, while the CLIP attention heads look at a few tokens on the image border. These may be the background tokens in which vision transformers store global image information~\cite{registers}, but we did not test this. For the lower black attribute, both encoders are read on the legs and hips. Each attribute therefore splits its attention heads between the two encoders in its own way, which fits the per-attribute gains in \cref{fig:pick}.
-
-This split is not limited to one image. We ran a retrained joint model of the PETA fold, with the same seed, on all held-out PETA images and measured the share of attention that each attention head puts on DINOv3 tokens. For 92.1\% of the triples of image, attention head and attribute, this share is above 99\% or below 1\%. For 83.1\% of the pairs of attention head and attribute, the attention head reads the same encoder on more than 90\% of the images. The number of attention heads that read DINOv3 changes with the attribute, from two to seven of the eight attention heads.
-
-\subsection{Hidden test set}
-\label{sec:test}
+\paragraph{Does the CLIP text score help?} Every attribute sentence describes a person, so the similarity of an image to an attribute sentence shares a part with its similarity to \texttt{a person}. This shared part only says how much the image looks like a person, not whether the person has the attribute. Subtracting it should keep the part that is specific to the attribute. \Cref{fig:zsauc} tests this before training with the AUC (area under the ROC curve). The AUC is the probability that an image with the attribute gets a higher score than an image without it. On PETA, the subtraction raises the mean AUC from 0.68 to 0.76 and raises the AUC for 37 of the 40 attributes, and Market-1501 shows the same direction. After training, the benefit is much smaller. Removing the text score lowers Challenge\_Avg by only 0.15 points on PETA and 0.05 points on Market, about the size of the gap between two seeds. One possible reason is that once CLIP is fine-tuned on labeled data, the CLIP query head learns most of this information directly from the image tokens. The text score therefore carries correct attribute information but is a minor component, not the main source of the gain of UniQuery.
 
 \begin{table}[t]
 \centering
 \small
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{@{}llc@{}}
 \toprule
 Submission & Loss & Challenge\_Avg \\
 \midrule
-Separate ensemble & weighted BCE$^\dagger$ & 0.7893 \\
-Separate ensemble & logit-adjusted & 0.7989 \\
-Joint model (b) & logit-adjusted & 0.7992 \\
-Joint model (a) & logit-adjusted & \textbf{0.8001} \\
+Independent ensemble & weighted BCE$^\dagger$ & 0.7893 \\
+Independent ensemble & logit-adjusted & 0.7989 \\
+UniQuery, variant & logit-adjusted & 0.7992 \\
+UniQuery (submitted) & logit-adjusted & 0.8001 \\
 \bottomrule
 \end{tabular}
-\caption{UPAR 2027 Track 1 hidden test set. All four submissions use DINOv3 and CLIP, two encoder passes per image and the fixed threshold of \cref{eq:rule}. Challenge\_Avg is on the 0--1 scale of the leaderboard. Final models are trained on the training and validation splits of all three datasets. Designs (a) and (b) are those of \cref{tab:var}. $^\dagger$With WiSE-FT for CLIP.}
+\caption{UPAR 2027 Track 1 hidden test set (scale 0 to 1). Final models are trained on the training and validation splits of all three datasets. All submissions use a threshold of 0.5 without post-processing, and the variant is the one in \cref{tab:main}. $^\dagger$With WiSE-FT~\cite{wiseft} for CLIP.}
 \label{tab:test}
 \end{table}
 
-This comparison tests whether the held-out gains also appear on the hidden test set. \Cref{tab:test} lists four submissions. Moving the separate ensemble to the logit-adjusted loss, without WiSE-FT~\cite{wiseft} for CLIP, gains about one point at the same threshold, so this gap does not come from the loss alone. Both joint models are above the separate ensemble with the same loss. These gaps are as small as the gap between the two joint models, so the hidden test set agrees with the held-out datasets in direction but cannot measure the size of the gain.
+\paragraph{Hidden test set.} On the hidden test set, both UniQuery submissions are above the independent ensemble with the same loss (\cref{tab:test}). These gaps are only about the size of the gap between the two UniQuery submissions, so the hidden test set agrees with the held-out datasets in direction but cannot measure the size of the gain. Our final submission is UniQuery.
 
 %=====================================================================
 \section{Limitations}
 \label{sec:limits}
 
-The main limits of this study are the following.
-\begin{itemize}
-\item The gains of the joint model are small and close to the difference between two seeds of the same model. Our evidence for them comes from their repetition across runs and two held-out datasets, not from their size. The submitted design (a) has one seed, and most other rows also have one seed and no error bars.
-\item We test two of the three possible folds, because holding out PA100k leaves few training images. On that fold, fusion heads on the separate ensemble do beat the plain average, so our claim about a mix learned after training holds only when the encoders are trained on enough data.
-\item We did not train, under our protocol, a model that merges both encoders into one vector as C$^2$T-Net does.
-\item The value of $\tau$ comes from validation images that include our held-out sets.
-\item \Cref{tab:two} uses runs from an earlier recipe, and its two DINOv3 copies differ in training settings, not only in seed.
-\item \Cref{fig:pick} uses runs (b) and (c). For retrained copies of the submitted design, 70\% to 85\% of the points lie above the horizontal line, a little fewer than in \cref{fig:pick}.
-\item The fusion heads in \cref{tab:frozen} learn from validation images of the source datasets, a smaller set than the one the joint model learns from.
-\item The encoder swaps of \cref{tab:swap} use one seed, two of them only the PETA fold, and the SigLIP2 query head has no language score.
-\item The attention statistics over all held-out images exist only for the PETA fold, and \cref{fig:arch,fig:routing} show an image that the submitted model saw in training.
-\end{itemize}
-These limits make the size of the gain uncertain, while its direction rests on repeated runs.
+Our results are measured on the PAR task of UPAR 2027, with its three datasets (PA100k, PETA and Market-1501) and its 40 attributes. We have not tested UniQuery on other PAR datasets, on other person-centric tasks, or with encoder pairs beyond those in this paper. We therefore cannot yet say whether mixing encoders per attribute brings the same benefit in those settings. Most results also come from a single seed.
 
 %=====================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 
-In our tests, averaging DINOv3 and CLIP raises held-out Challenge\_Avg much more than averaging two fine-tuned copies of one encoder, and the two encoders are strong on different attributes. Such encoders are usually combined after training by averaging their logits, and in our two main folds a mix learned on top of the trained encoders does not transfer. We find it better to learn the mix during training. The joint model, with a joint query head that reads both encoders and a query head for each encoder, beats the separate ensemble on both held-out datasets in almost every run of its design. This gain needs fine-tuned encoders, and the newer encoders we tried do not beat DINOv3 and CLIP on PETA. Inside the joint query head, almost every attention head reads one encoder for each attribute, and most attributes move toward the encoder that works better for them. A next step is to test whether the gain grows with more varied source datasets.
+This paper studies how to combine two foundation encoders for pedestrian attribute recognition on unseen cameras. DINOv3 and CLIP are wrong on the same image less often than two copies of one encoder, which is consistent with their different pretraining, and pairing them helps more than pairing two such copies. UniQuery fine-tunes both encoders in one network and lets one query per attribute decide which encoder to draw on. Our main finding is that the mix needs to be learned together with the encoders, through a joint query head placed next to the query head of each encoder. Without the joint query head at inference, UniQuery no longer beats the ensemble, and the mixes we tried on top of finished models only fit the source datasets. Inside the joint query head, each attention head chooses one encoder, with lower-body and accessory attributes leaning on DINOv3 and upper-body colors on CLIP. For cross-domain PAR, this suggests letting the model assign encoders to attributes during training, rather than mixing finished models with one ratio for all attributes.
 
 {\small
 \bibliographystyle{ieeenat_fullname}

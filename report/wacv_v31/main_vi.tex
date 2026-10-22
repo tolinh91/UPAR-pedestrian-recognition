@@ -37,7 +37,7 @@
 \def\confName{WACV}
 \def\confYear{2027}
 
-\title{Huấn luyện cùng nhau: Joint Query Head trên DINOv3 và CLIP\\cho nhận dạng thuộc tính người đi bộ xuyên domain}
+\title{UniQuery: Hợp nhất các vision model bằng một Joint Query Head\\cho nhận dạng thuộc tính người đi bộ xuyên domain}
 \author{Bản tiếng Việt để đọc nội bộ (không nộp)}
 
 \begin{document}
@@ -45,13 +45,13 @@
 
 %=====================================================================
 \begin{abstract}
-Bài báo này trình bày giải pháp của nhóm cho Track~1 (nhận dạng thuộc tính người đi bộ) của UPAR Challenge 2027, tổ chức tại workshop Real-World Surveillance (RWS) của WACV 2027. Ở track này, mô hình được train trên PA100k, PETA và Market-1501, rồi được test trên một tập ảnh ẩn lấy từ các camera khác. Vì vậy mô hình phải giữ được độ chính xác khi độ phân giải ảnh, góc camera, ánh sáng và quy tắc gán nhãn thay đổi. Các giải pháp trước đây fine-tune một encoder, hoặc gộp hai encoder thành một đặc trưng dùng chung cho mọi thuộc tính. Một cách phổ biến khác là separate ensemble, trong đó mỗi encoder được fine-tune riêng rồi logit của chúng được lấy trung bình. Cách này trộn hai encoder theo cùng một tỷ lệ cố định cho mọi thuộc tính, và hai encoder không bao giờ được train cùng nhau. Nhóm đề xuất một joint model nhắm vào cả hai điểm này. Joint model fine-tune hai foundation encoder là DINOv3 và CLIP trong cùng một mạng. Mỗi encoder có query head riêng, và một joint query head thứ ba cho mỗi thuộc tính một query đọc token của cả hai encoder, nên cách trộn được học trong lúc train và có thể khác nhau giữa các thuộc tính. Lúc test, logit của ba query head được lấy trung bình. Trong các thí nghiệm leave-one-dataset-out, joint model đạt Challenge\_Avg cao hơn separate ensemble trên cả hai held-out dataset. Ngược lại, cách trộn học trên separate ensemble sau khi train không vượt được trung bình logit đơn giản, và joint model với encoder đóng băng cho kết quả thấp hơn. Trên tập test ẩn của cuộc thi, joint model đạt Challenge\_Avg 0.8001 với một ngưỡng 0.5 chung cho mọi thuộc tính, so với 0.7989 của separate ensemble.
+Bài báo này trình bày giải pháp của nhóm cho Track~1, nhận dạng thuộc tính người đi bộ (Pedestrian Attribute Recognition, PAR), của UPAR Challenge 2027 tại workshop Real-World Surveillance của WACV 2027. PAR cho ra mô tả ngữ nghĩa của từng người, phục vụ truy vấn người theo thuộc tính và hỗ trợ tái nhận dạng người. Tuy vậy, nhận dạng chính xác các thuộc tính chi tiết khi đổi domain vẫn khó, do che khuất, sự thay đổi về ngoại hình và sự dịch chuyển của phân phối ảnh. Các ensemble gồm những foundation encoder train riêng rẽ trộn logit với trọng số cố định, nên mọi thuộc tính dùng chung một tỷ lệ trộn và các encoder không bao giờ được train cùng nhau. Mô hình của nhóm, UniQuery, thay vào đó fine-tune đồng thời DINOv3~\cite{dinov3} và CLIP~\cite{clip} để trộn hai encoder riêng cho từng thuộc tính. Mô hình kết hợp hai query head riêng của từng encoder với một joint query head, trong đó các attribute query đọc token của cả hai encoder, và dự đoán được lấy bằng trung bình logit của ba query head. Được train trên PA100k~\cite{pa100k}, PETA~\cite{peta} và Market-1501~\cite{market}, mô hình vượt ensemble train riêng rẽ về Challenge\_Avg trên cả hai split leave-one-dataset-out được đánh giá. Ablation cho thấy học cách trộn trên các encoder đã train riêng không vượt trung bình logit, còn đóng băng encoder làm giảm điểm của mô hình. Trên tập test ẩn của cuộc thi, giải pháp đạt Challenge\_Avg 0.8001.
 \end{abstract}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{arch.pdf}
-\caption{(a) Joint model trên một ảnh PETA. Hai encoder được fine-tune trong cùng một mạng, trừ patch embedding và tám block đầu của mỗi encoder được đóng băng. Ngoài query head riêng của mỗi encoder, một joint query head đọc token của cả hai encoder sau phép chiếu tuyến tính $W$ về cùng độ rộng và một source embedding. Các hình tròn là logit của ba query head cho thuộc tính ``hat'' (mũ), tính bằng trọng số đã nộp, và trung bình của chúng đi qua hàm sigmoid. Ảnh này thuộc split validation của PETA, nên mô hình đã nộp đã thấy nó khi train. Trong lúc train, loss của \cref{eq:loss} được áp dụng cho từng query head. (b) Một query head. Bốn mươi attribute query học được đọc token của ảnh qua cross-attention, rồi một MLP có residual và một bộ phân loại riêng cho mỗi thuộc tính biến mỗi query thành một logit. Ba query head có cùng thiết kế và chỉ khác nhau ở token mà chúng đọc.}
+\includegraphics[width=\linewidth]{uniquery_model.pdf}
+\caption{UniQuery trên một ảnh PETA. Phần gạch chéo có ổ khoá được đóng băng, màu nhạt là phần được train, ô xám là phép toán không có tham số, và màu các ô token là PCA của patch token. Ở nhánh điểm ngôn ngữ, $P$ là phép chiếu đã pretrain của CLIP, $e$ là CLS token sau phép chiếu và chuẩn hoá, $w_k$ là vector câu của thuộc tính $k$ trừ vector câu \texttt{a person}, còn $\delta_k$ và $b_k$ được học. Lúc train, mỗi query head có loss riêng với độ dịch $s$ (\cref{eq:loss}). Lúc inference, logit của ba query head được lấy trung bình rồi so với ngưỡng 0.5. Mô hình đã nộp đã thấy ảnh này khi train.}
 \label{fig:arch}
 \end{figure*}
 
@@ -59,72 +59,123 @@ Bài báo này trình bày giải pháp của nhóm cho Track~1 (nhận dạng t
 \section{Giới thiệu}
 \label{sec:intro}
 
-Bài báo này trình bày giải pháp của nhóm cho Track~1 của UPAR Challenge 2027, tổ chức tại workshop Real-World Surveillance (RWS) của WACV 2027. Cuộc thi tiếp nối các mùa 2023 và 2024~\cite{upar23,upar24} và dựa trên bộ dữ liệu UPAR~\cite{upar}. Track~1 yêu cầu một mô hình nhận dạng thuộc tính người đi bộ hoạt động được trên những camera chưa từng xuất hiện khi train. Mô hình được train trên PA100k~\cite{pa100k}, PETA~\cite{peta} và Market-1501~\cite{market,marketattr}, ba dataset có chung 40 thuộc tính nhị phân, rồi được test trên một tập ảnh ẩn thuộc các domain khác. Độ phân giải ảnh, góc camera và ánh sáng thay đổi giữa các camera, và mỗi dataset train gán nhãn thuộc tính theo quy tắc riêng. Vì vậy một mô hình khớp tốt với các camera train vẫn có thể thất bại trên camera mới.
+Phân tích người đi bộ có vai trò quan trọng trong giám sát video thông minh và bán lẻ trực tuyến. Một bài toán chính trong đó là nhận dạng thuộc tính người đi bộ (PAR). PAR dự đoán các thuộc tính ngữ nghĩa của từng người từ ảnh, cho ra mô tả dễ hiểu hỗ trợ truy vấn người theo thuộc tính và tái nhận dạng người. Dù đã có nhiều tiến bộ, nhận dạng bền vững vẫn khó vì che khuất, độ phân giải thấp, mất cân bằng nhãn và sự thay đổi về ngoại hình cũng như điều kiện chụp~\cite{rap,upar,labelbalanced}. Bài toán còn khó hơn trên camera chưa từng xuất hiện khi train, vì độ phân giải, góc nhìn và ánh sáng thay đổi, và mỗi dataset train gán nhãn thuộc tính theo quy tắc riêng~\cite{upar}.
 
-Foundation encoder là lời giải tự nhiên cho sự dịch chuyển domain này. Chúng được pretrain trên các tập ảnh rất lớn và đa dạng, nên đặc trưng của chúng đã bao phủ nhiều cảnh, kiểu camera và điều kiện mà các tập train nhỏ của bài toán nhận dạng thuộc tính người đi bộ không có. Để dùng cho một bài toán cụ thể, encoder thường được fine-tune cùng một head nhỏ. Fine-tune giúp encoder thích nghi với bài toán, nhưng cũng có thể làm hỏng đặc trưng đã pretrain và làm giảm độ chính xác khi phân phối dữ liệu thay đổi~\cite{lpft,wiseft}. Vì vậy với camera chưa từng thấy, chưa rõ nên fine-tune encoder hay giữ nguyên trọng số pretrain.
+Foundation encoder được pretrain trên các tập ảnh lớn và đa dạng~\cite{dinov3,clip} là điểm xuất phát tự nhiên cho sự dịch chuyển này. Chúng thường được dùng cho bài toán downstream bằng cách fine-tune một encoder cùng một head nhỏ, hoặc lấy trung bình logit của nhiều encoder fine-tune riêng rẽ~\cite{deepens}. Các đội UPAR trước đây đi theo những hướng này, với một Swin-B fine-tune riêng~\cite{upar23}, ngưỡng riêng cho từng thuộc tính chọn trên dữ liệu validation~\cite{upar24}, hoặc hai encoder gộp thành một vector dùng chung cho mọi thuộc tính~\cite{c2tnet}. Trung bình của các encoder fine-tune riêng rẽ dùng cùng một tỷ lệ trộn cho mọi thuộc tính, và các encoder của nó không bao giờ được train cùng nhau.
 
-Hai foundation encoder khác nhau có thể mạnh ở những thuộc tính khác nhau. Trong thí nghiệm của nhóm, khi DINOv3~\cite{dinov3} và CLIP~\cite{clip} được fine-tune riêng, mỗi encoder nhận dạng tốt hơn encoder kia ở một nhóm thuộc tính riêng. Cách kết hợp hai encoder đơn giản nhất là ensemble các encoder được fine-tune riêng rẽ (separate ensemble)~\cite{deepens}. Mỗi encoder được fine-tune riêng, rồi logit của hai encoder được lấy trung bình với trọng số bằng nhau cho mọi thuộc tính. Cách này đã tốt hơn dùng riêng từng encoder, nhưng nó cho hai encoder đóng góp như nhau ở mọi thuộc tính, kể cả những thuộc tính mà một encoder tốt hơn hẳn. Một cách khác là học cách trộn các mô hình từ dữ liệu. Cách trộn có thể được học sau khi các mô hình đã train xong, như trong stacking~\cite{stacking}, hoặc học cùng lúc với các mô hình, như trong mixture of experts~\cite{moe}. Với bài toán này, cách trộn còn có thể khác nhau theo thuộc tính. Cả hai cách đều học cách trộn trên ảnh của các dataset nguồn, nên cần kiểm tra xem cách trộn học được có còn đúng trên dataset không có trong dữ liệu train hay không.
-
-Các đội tham gia UPAR trước đây đi theo vài hướng khác nhau. Đội thắng năm 2023 fine-tune một Swin-B duy nhất và thêm một số hạng phạt dựa trên tần suất xuất hiện của mỗi thuộc tính~\cite{upar23}. Năm 2024, một đội chọn riêng một ngưỡng cho từng thuộc tính trên dữ liệu validation~\cite{upar24}, còn đội hạng hai C$^2$T-Net~\cite{c2tnet} train end-to-end một Swin-B và một EVA ViT-L rồi gộp chúng bằng cross-attention theo hai chiều. C$^2$T-Net gần với công trình của nhóm nhất vì nó cũng học cách trộn hai encoder trong lúc train. Tuy nhiên, C$^2$T-Net gộp hai encoder thành một vector duy nhất, và mọi thuộc tính được dự đoán từ vector này.
-
-Bài báo này tập trung vào cách tận dụng foundation encoder cho bài toán này. Nhóm chia vấn đề thành ba câu hỏi. Thứ nhất là nên kết hợp những encoder nào. Thứ hai là nên fine-tune hay giữ nguyên các encoder. Thứ ba là nên học cách trộn sau khi train hay trong lúc train. Các câu trả lời dẫn tới một joint model gồm hai encoder có cách pretrain khác nhau là DINOv3 và CLIP, học cách trộn trong lúc cả hai encoder được fine-tune.
-
-\emph{Joint model} của nhóm (\cref{fig:arch}) fine-tune DINOv3 và CLIP trong cùng một mạng. Mỗi encoder giữ query head riêng~\cite{q2l,mldecoder}, là DINOv3 query head và CLIP query head (single-encoder query head). Trong một query head, mỗi thuộc tính có một attribute query học được, và query này đọc token của ảnh để cho ra logit của thuộc tính đó. Query head thứ ba là joint query head, đọc token của cả hai encoder. Nhờ vậy mỗi thuộc tính có cách trộn hai encoder riêng, và cách trộn này có thể đổi theo từng ảnh. Loss của joint query head cũng truyền gradient vào cả hai encoder, nên hai encoder được fine-tune cùng nhau thay vì độc lập. Lúc test, logit của ba query head được lấy trung bình.
-
-Mức tăng của joint model so với separate ensemble là nhỏ, và mức tăng nhỏ rất dễ bị phóng đại. Khi được đánh giá công bằng, nhiều phương pháp domain generalization không vượt được cách train thông thường~\cite{domainbed}. Vì vậy nhóm xây dựng một khung đánh giá kiểm tra từng bước lập luận trong điều kiện tương đương. Mọi mô hình được test trên một dataset mà nó chưa từng thấy khi train. Joint model và separate ensemble dùng cùng encoder, cùng loss và cùng số lượt chạy encoder. So sánh chính được lặp lại qua các seed và biến thể thiết kế, rồi được kiểm tra trên tập test ẩn. Trong khung đánh giá này, nhóm đưa ra ba nhận định sau.
+Trong bài báo này, nhóm trình bày cách tiếp cận cho Track~1 của UPAR Challenge 2027. Mô hình của nhóm, UniQuery (\cref{fig:arch}), fine-tune đồng thời DINOv3 và CLIP, và mỗi encoder có một query head riêng. Bên cạnh hai query head này, một joint query head kết hợp đặc trưng của cả hai encoder qua các attribute query riêng cho từng thuộc tính, nhờ đó mỗi thuộc tính lấy được những thông tin khác nhau từ hai encoder. Lúc inference, nhóm lấy trung bình logit của ba query head. Để đánh giá mức độ hiệu quả của phương pháp một cách chặt chẽ, nhóm xây dựng một khung đánh giá, trong đó mọi lựa chọn thiết kế được kiểm tra trên một dataset không có trong dữ liệu train. Các đóng góp chính của bài như sau.
 \begin{itemize}
-\item Cách trộn học trên separate ensemble đã train không chuyển được sang dataset mới. Các fusion head nhỏ học trên ảnh của dataset nguồn đều không vượt được trung bình logit đơn giản khi tính trung bình trên hai held-out dataset PETA và Market.
-\item Học cách trộn trong lúc train có ích, và trong các thí nghiệm của nhóm, điều này cần encoder được fine-tune. Joint model vượt separate ensemble trên cả hai held-out dataset, và điều này gần như luôn đúng khi train lại cùng thiết kế. Mức tăng cũng xuất hiện trên tập test ẩn. Khi đóng băng encoder, joint model tụt xuống dưới DINOv3 fine-tune riêng.
-\item Joint query head điều chỉnh cách trộn theo từng thuộc tính. Với phần lớn thuộc tính, balanced accuracy của nó tiến về phía single-encoder query head tốt hơn. Trên toàn bộ ảnh held-out của PETA, gần như mọi attention head chỉ đọc một encoder, và số attention head đọc mỗi encoder thay đổi theo thuộc tính.
+\item Nhóm đề xuất UniQuery, train chung DINOv3 và CLIP và để một query riêng của mỗi thuộc tính quyết định cách trộn hai encoder. UniQuery vượt ensemble của các encoder fine-tune riêng rẽ với cùng loss trên cả hai held-out dataset, và cũng cao hơn trên tập test ẩn dù khoảng chênh ở đó nhỏ. Mức tăng cần joint query head, vì khi bỏ nó lúc inference, trung bình của hai query head còn lại không vượt ensemble.
+\item Nhóm cho thấy, trong các thí nghiệm của bài, cách trộn cần được học cùng lúc với việc fine-tune encoder. Các fusion head học trên các encoder đã fine-tune riêng rẽ không vượt trung bình logit đơn giản khi tính trung bình trên hai held-out dataset, và khi đóng băng encoder, UniQuery giảm xuống dưới một DINOv3 fine-tune riêng.
+\item Nhóm phân tích cách joint query head trộn hai encoder. Mỗi attention head của nó gần như chỉ đọc token của một encoder, và số attention head dành cho DINOv3 hay CLIP thay đổi theo thuộc tính. Trên phần lớn thuộc tính, joint query head chính xác hơn trung bình của hai query head riêng, và ở các thuộc tính không phải màu, nó thường bằng hoặc vượt query head mạnh hơn.
 \end{itemize}
 
 %=====================================================================
 \section{Công trình liên quan}
 \label{sec:related}
 
-\paragraph{Nhận dạng thuộc tính người đi bộ xuyên domain.} Phần lớn các phương pháp nhận dạng thuộc tính người đi bộ được xây dựng và kiểm tra trong cùng một dataset. Các phương pháp này coi bài toán là phân loại đa nhãn với loss có trọng số theo tần suất thuộc tính~\cite{deepmar}, mượn các head dựa trên query từ bài toán phân loại đa nhãn~\cite{q2l,mldecoder}, hoặc bổ sung thông tin ngôn ngữ qua prompt riêng cho từng ảnh~\cite{evsitp}, mô tả của từng người~\cite{jiell} hay đặc trưng CLIP~\cite{promptpar}. Mức tăng đo trong một dataset có thể không bền. Jia và cộng sự~\cite{rethinkpar} cho thấy nhiều mức tăng biến mất khi cùng một người không còn xuất hiện ở cả ảnh train lẫn ảnh test. UPAR~\cite{upar} gộp tập thuộc tính của nhiều dataset thành 40 thuộc tính nhị phân, nhờ đó có thể train trên một số dataset và test trên dataset khác, và AttriVision~\cite{attrivision} dùng đặc trưng CLIP để tổng quát hoá tốt hơn trong bối cảnh này. Cuộc thi UPAR~\cite{upar23,upar24} kiểm tra mô hình trên các camera không có trong dữ liệu train, và báo cáo năm 2024 của cuộc thi ghi nhận rằng dữ liệu train đa dạng giúp các mô hình lớn tổng quát hoá tốt hơn~\cite{upar24}. Vì vậy nhóm dùng các encoder lớn đã pretrain và đánh giá mọi lựa chọn thiết kế trên một dataset được giữ ngoài quá trình train.
+Bài toán xuyên domain và học thống nhất thu hút các nhà nghiên cứu, vì độ chính xác cao trên một dataset PAR riêng lẻ không bảo đảm độ tin cậy ở môi trường mới~\cite{upar,rethinkpar}. Ở mức biểu diễn, ASRL~\cite{asrl} giảm sự nhầm lẫn của bộ phân loại do tương quan giữa các thuộc tính, bằng một đặc trưng riêng cho mỗi thuộc tính và một bộ phân loại trực giao được giữ cố định. AttriVision~\cite{attrivision} fine-tune cả hai encoder của CLIP để embedding ảnh gần với embedding của các câu ngắn mô tả giá trị thuộc tính của ảnh, rồi dự đoán từng thuộc tính bằng độ tương đồng cosine. Giống AttriVision, UniQuery dùng text embedding của CLIP, nhưng giữ text encoder đóng băng và chỉ cộng vào logit của CLIP query head một điểm ngôn ngữ, tính từ độ giống của ảnh với câu mô tả thuộc tính.
 
-\paragraph{Foundation encoder.} Các visual foundation encoder khác nhau ở cách pretrain. Encoder self-supervised như DINOv3~\cite{dinov3} cho đặc trưng theo vùng (dense feature) mạnh. Encoder ảnh--văn bản như CLIP~\cite{clip} và các bản kế tiếp~\cite{metaclip,metaclip2,dfn,evaclip,siglip2,pe} căn chỉnh ảnh với chú thích có gọi tên màu sắc, quần áo và đồ vật, và độ đa dạng của dữ liệu train giúp chúng bền vững khi phân phối dữ liệu thay đổi~\cite{clipdata}. Tuy nhiên, CLIP có thể bỏ sót những chi tiết hình ảnh mà encoder self-supervised phân biệt được, và việc bổ sung đặc trưng self-supervised sửa được một phần các lỗi này ở mô hình ngôn ngữ đa phương thức~\cite{eyeswide,cambrian}. Các kết quả này gợi ý rằng hai loại encoder mạnh ở những đầu vào khác nhau, nên nhóm ghép DINOv3 với CLIP.
+Một hướng liên quan dùng ảnh của domain đích. AdaGPAR~\cite{adagpar} giữ nguyên trọng số lúc test và phân loại ảnh mới theo độ tương đồng với các prototype dựng từ những dự đoán đáng tin cậy trên domain đích. LDCD-PAR~\cite{ldcd} train trên cả ảnh đích không nhãn, với một domain discriminator đối kháng trên đặc trưng cục bộ. Ngược lại, UniQuery thuộc hướng domain generalization và không dùng ảnh nào của domain đích.
 
-\paragraph{Kết hợp các encoder.} Nhóm sắp các cách kết hợp encoder đã pretrain theo thời điểm học cách trộn các encoder. Cách đơn giản nhất không học cách trộn. Ensemble train từng mô hình riêng rồi lấy trung bình dự đoán~\cite{deepens}. Ensemble có lợi nhất khi các thành viên dự đoán sai ở những mẫu khác nhau~\cite{krogh} và thuộc nhóm mô hình đáng tin cậy nhất khi dữ liệu dịch chuyển~\cite{ovadia}, nhưng nó dùng cùng một trọng số cho mọi đầu vào. Lấy trung bình tham số mô hình (weight averaging)~\cite{soups,diwa,wiseft} bỏ được chi phí thêm lúc test, nhưng cần các mô hình được fine-tune từ cùng một điểm xuất phát, nên không gộp được hai encoder khác nhau. Cách thứ hai học cách trộn sau khi train, bằng một mô hình nhỏ đặt trên các thành viên đã cố định~\cite{stacking}. Cách thứ ba học cách trộn ngay trong lúc train. Các mô hình ngôn ngữ đa phương thức cho các query học được đọc đặc trưng của nhiều image encoder~\cite{brave,cambrian}, hoặc xen kẽ token của CLIP và một encoder self-supervised~\cite{eyeswide}, và BRAVE~\cite{brave} đóng băng các encoder. Với thuộc tính người đi bộ, C$^2$T-Net~\cite{c2tnet} cũng học cách trộn trong lúc train. Ngoài ba cách này, distillation~\cite{amradio,cradio4,prism} gộp nhiều mô hình thầy vào một mô hình trò. Cách này giữ chi phí của một encoder nhưng phải đưa đặc trưng của mọi mô hình thầy vào cùng một không gian. Joint model của nhóm học cách trộn trong lúc train với encoder được fine-tune, và khác các phương pháp trên ở hai điểm. Thứ nhất, cách trộn do một query riêng của mỗi thuộc tính quyết định, nên có thể thay đổi theo thuộc tính và theo ảnh. Thứ hai, mỗi encoder vẫn giữ query head riêng, nên đầu ra vẫn chứa trung bình của hai single-encoder query head.
+Học thống nhất là một con đường khác dẫn tới biểu diễn chuyển giao được. UniHCP~\cite{unihcp} train chung một ViT encoder và một decoder cho nhiều bài toán về người, trong đó mỗi bài toán có bộ query riêng và PAR có một query cho mỗi thuộc tính. Phương pháp PATH trong HumanBench~\cite{humanbench} pretrain một encoder dùng chung trên nhiều dataset về người, với một projector riêng cho mỗi bài toán. CLEAR~\cite{clear} dùng lại mạng nhận dạng thuộc tính cho truy vấn người, bằng cách đưa câu mô tả các thuộc tính cần tìm qua một mô hình ngôn ngữ GPT và chỉ train các adapter nhỏ. Như UniHCP và các bộ phân loại đa nhãn dựa trên query~\cite{q2l,mldecoder}, UniQuery dùng các query học được để đọc token của ảnh, nhưng các query trong joint query head đọc token của hai encoder khác nhau.
 
-\paragraph{Thuộc tính hiếm và quy tắc quyết định.} Phần lớn trong 40 thuộc tính là thuộc tính hiếm, trong khi mA, một trong hai thành phần của Challenge\_Avg, coi trọng mẫu dương và mẫu âm của mỗi thuộc tính như nhau. Vì vậy các phương pháp nhận dạng thuộc tính người đi bộ thường đánh trọng số cho loss theo tần suất thuộc tính~\cite{deepmar}. Các đội UPAR trước đây cũng dùng trọng số dựa trên prior của thuộc tính hoặc một ngưỡng riêng cho mỗi thuộc tính~\cite{upar23,upar24}. Ngưỡng riêng cho từng thuộc tính thêm 40 giá trị được fit trên ảnh nguồn sau khi train, nên có thể không đứng vững trên camera mới. Logit adjustment~\cite{logitadj} chuyển phần hiệu chỉnh theo prior vào trong loss, và ở dạng chuẩn, loss này nhất quán với balanced error, đúng đại lượng mà mA đo cho từng thuộc tính. Nhóm chỉ dùng logit adjustment trong lúc train và giữ một ngưỡng 0.5 cho mọi thuộc tính lúc test.
+Hai encoder của UniQuery khác nhau ở cách pretrain. DINOv3~\cite{dinov3} học self-supervised trên ảnh không nhãn và cho patch feature chất lượng cao, còn CLIP~\cite{clip} và các bản kế tiếp~\cite{metaclip,dfn,evaclip,siglip2,pe} học khớp ảnh với chú thích trên dữ liệu web. Độ đa dạng của dữ liệu web là nguồn chính giúp CLIP bền vững khi phân phối dữ liệu thay đổi~\cite{clipdata}. Tuy vậy, CLIP coi một số ảnh khác nhau rõ rệt là giống nhau, trong khi một encoder self-supervised phân biệt được chúng~\cite{eyeswide}. Thêm đặc trưng self-supervised bên cạnh CLIP cải thiện mô hình ngôn ngữ đa phương thức trên các benchmark thiên về thị giác~\cite{eyeswide,cambrian}, nên nhóm ghép DINOv3 với CLIP.
+
+Cách đơn giản để ghép hai encoder là ensemble. Mỗi encoder được fine-tune riêng thành một mô hình, và lúc inference, dự đoán của hai mô hình được lấy trung bình~\cite{deepens}. Ensemble chỉ có lợi ở những ảnh mà hai mô hình dự đoán khác nhau~\cite{krogh}. Nó cũng dùng chung một tỷ lệ trộn cho mọi thuộc tính. Lấy trung bình tham số~\cite{soups,wiseft} không gộp được DINOv3 với CLIP, vì nó cần các mô hình có chung điểm xuất phát. Distillation gộp nhiều encoder vào một~\cite{amradio}, nhưng encoder học trò vẫn thua các teacher của nó ở một số bài toán, ví dụ thua teacher ảnh và văn bản ở zero-shot classification~\cite{amradio,cradio4}. Stacking học cách trộn trên các mô hình đã train xong~\cite{stacking}. Ở UPAR 2024~\cite{upar24}, C$^2$T-Net~\cite{c2tnet} train chung một Swin-B và một EVA ViT-L rồi gộp chúng thành một vector dùng chung cho mọi thuộc tính. UniQuery cũng train chung hai encoder, nhưng mỗi thuộc tính có một query riêng quyết định cách trộn, và mỗi encoder giữ query head riêng.
+
+Các thuộc tính cũng khác nhau về tần suất, và phần lớn trong 40 thuộc tính có ít mẫu dương. Khi train thông thường, mô hình thiên về dự đoán âm cho những thuộc tính này~\cite{logitadj}. Thiên lệch này làm giảm mean balanced accuracy (mA), metric lấy trung bình theo thuộc tính độ chính xác trên mẫu dương và trên mẫu âm với trọng số như nhau. Qua đó nó cũng làm giảm Challenge\_Avg, metric của cuộc thi, là trung bình điều hoà của mA và instance F1. DeepMAR~\cite{deepmar} bù lại bằng cách đánh trọng số loss của mỗi thuộc tính theo tỷ lệ mẫu dương của nó, và UniQuery cũng dùng trọng số này. Các đội UPAR trước đây còn chọn một ngưỡng riêng cho từng thuộc tính trên ảnh validation của domain nguồn~\cite{upar24}, nên các ngưỡng này có thể không đứng vững trên camera mới. Logit adjustment~\cite{logitadj} cộng vào logit một độ dịch theo tần suất của thuộc tính ngay trong loss lúc train, nên UniQuery dùng một ngưỡng 0.5 cho mọi thuộc tính lúc inference.
 
 %=====================================================================
-\section{Phương pháp}
+\section{Phương pháp đề xuất}
 \label{sec:method}
 
-\paragraph{Encoder.} Nhóm dùng DINOv3 ViT-H+/16~\cite{dinov3} với 840 triệu tham số và image encoder OpenAI CLIP ViT-L/14~\cite{clip} với 303 triệu tham số, từ đây gọi là DINOv3 và CLIP. Cả hai đọc một ảnh cắt $224\times112$ với phép chuẩn hoá riêng, cho ra 98 patch token với DINOv3 và 128 patch token với CLIP, cộng thêm một CLS token cho mỗi encoder. Patch embedding và tám block đầu của mỗi encoder được đóng băng. Các block còn lại được fine-tune với learning rate $5\cdot10^{-5}$ cho block trên cùng, layer-wise decay 0.75 cho các block bên dưới, và learning rate gấp mười lần cho các query head.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{query_head.pdf}
+\caption{Một query head. Ba query head của UniQuery có cùng thiết kế và chỉ khác token mà chúng đọc. Hình nhỏ là attention của query mũ trong DINOv3 query head trên ảnh của \cref{fig:arch}, trung bình tám attention head.}
+\label{fig:qhead}
+\end{figure}
 
-\paragraph{Single-encoder query head.} Mỗi encoder có một query head một lớp~\cite{q2l}, là DINOv3 query head và CLIP query head. Bốn mươi attribute query học được đọc CLS token và patch token của encoder qua cross-attention với tám attention head. Một MLP có residual và một layer norm biến mỗi attribute query thành một \emph{attribute vector}, rồi một bộ phân loại tuyến tính riêng cho mỗi thuộc tính ánh xạ attribute vector thành logit. Query head của CLIP còn cộng thêm một điểm ngôn ngữ zero-shot vào mỗi logit. Điểm này so sánh CLS token đã chiếu với một hướng văn bản cho mỗi thuộc tính. Hướng văn bản là text embedding CLIP của một prompt mô tả thuộc tính, trừ đi embedding của một prompt trung tính. Trong separate ensemble, mỗi encoder được fine-tune riêng với query head của nó.
+\Cref{fig:arch} trình bày kiến trúc của UniQuery. Một ảnh người đi bộ đã cắt cỡ $224\times112$ được đưa qua hai encoder là DINOv3 ViT-H+/16~\cite{dinov3} và image encoder OpenAI CLIP ViT-L/14~\cite{clip}, và cả hai được fine-tune trong cùng một mạng. Ba query head đọc token của hai encoder theo ba cách. DINOv3 query head và CLIP query head chỉ đọc token của encoder tương ứng, còn joint query head đọc token của cả hai. Mỗi query head cho ra 40 logit ứng với 40 thuộc tính nhị phân. Lúc train, mỗi query head có loss riêng, còn lúc inference, logit của ba query head được lấy trung bình.
 
-\paragraph{Joint query head.} Joint query head cho phép một attribute query thu thập bằng chứng từ cả hai encoder. Nó có cùng kiến trúc với các single-encoder query head, nhưng key và value là token của cả hai encoder. Hai encoder có độ rộng khác nhau, nên mỗi encoder có một lớp tuyến tính $W$ ánh xạ 99 token DINOv3 (1280 chiều) và 129 token CLIP (1024 chiều) về 1024 chiều. Một source embedding học được cộng vào mọi token của mỗi encoder, để attention phân biệt được hai tập token. Sau đó mỗi attribute query trong 40 query đọc toàn bộ 228 token.
+CLIP query head còn dùng khả năng so ảnh với câu chữ mà CLIP học được khi pretrain. Với thuộc tính đội mũ, CLIP so ảnh với câu \texttt{a person wearing a hat or a cap} và với câu \texttt{a person}. Điểm ngôn ngữ của thuộc tính này là độ giống của ảnh với câu thứ nhất trừ đi độ giống với câu thứ hai (\cref{fig:zsidea}). Điểm này được cộng vào logit của thuộc tính đội mũ mà CLIP query head tính từ token của ảnh. Phép trừ nhằm bỏ phần giống chung với câu \texttt{a person} mà câu mô tả nào cũng có, còn phép cộng nhằm đưa hiểu biết của CLIP về thuộc tính vào logit tính từ token của ảnh.
 
-\paragraph{Train và quy tắc quyết định.} Ba query head dùng cùng một loss, và loss chung là tổng loss của ba query head như sau
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\linewidth]{text_idea.pdf}
+\caption{Ý tưởng của điểm ngôn ngữ với thuộc tính đội mũ, trên ảnh validation của PETA. Điểm ngôn ngữ của một ảnh là khoảng cách theo chiều dọc từ điểm của nó tới đường chéo. Ảnh không đội mũ giống câu đội mũ hơn ảnh đội mũ, nhưng nằm dưới đường chéo nên có điểm ngôn ngữ thấp hơn.}
+\label{fig:zsidea}
+\end{figure}
+
+Token của DINOv3 và của CLIP có độ rộng khác nhau, nên trước khi vào joint query head, mỗi loại token đi qua một lớp linear riêng để về cùng một độ rộng. Sau đó token của hai encoder được nối thành một dãy cho joint query head đọc chung. Bên trong, mỗi query head gồm một lớp cross-attention, một MLP và một bộ phân loại~\cite{q2l,mldecoder} (\cref{fig:qhead}).
+
+Lúc train, loss ở \cref{eq:loss} được áp dụng cho cả ba query head
 \begin{equation}
-L=\sum_{k\in\{D,J,C\}}\;\sum_{a=1}^{40} m_a\,w_a\,\mathrm{BCE}\big(z_{k,a}+s_a,\;y_a\big),
+L=\sum_{k\in\{D,J,C\}}\;\sum_{a=1}^{40} m_a\,w_a(y_a)\,\mathrm{BCE}\big(z_{k,a}+s_a,\;y_a\big),
 \label{eq:loss}
 \end{equation}
-trong đó $k$ là DINOv3 query head ($D$), joint query head ($J$) hoặc CLIP query head ($C$), BCE là binary cross-entropy, $z_{k,a}$ là logit của query head $k$ cho thuộc tính $a$, $y_a$ là nhãn đã làm mượt với hệ số 0.05, $w_a$ là trọng số DeepMAR~\cite{deepmar}, và $m_a$ là mask loại bỏ những thuộc tính mà dataset nguồn của ảnh không gán nhãn. Độ dịch $s_a=\tau\log\frac{p_a}{1-p_a}$ dùng prior $p_a$ của tập train với $\tau=0.32$ và chỉ được dùng trong lúc train~\cite{logitadj}. Với thuộc tính hiếm, $s_a$ âm, nên mô hình phải nâng logit gốc lên để khớp nhãn. Khi bỏ độ dịch lúc test, thuộc tính hiếm được dự đoán dương thường xuyên hơn, phù hợp với một metric coi trọng mẫu dương và mẫu âm như nhau. Lúc test, thuộc tính $a$ được dự đoán là có khi
-\begin{equation}
-\sigma\big(\tfrac{1}{3}(z_{D,a}+z_{J,a}+z_{C,a})\big)>0.5 .
-\label{eq:rule}
-\end{equation}
-Cả 40 thuộc tính dùng cùng quy tắc này. Không có offset hay ngưỡng riêng cho từng thuộc tính nào được thêm sau khi train.
+trong đó $s_a=\tau\log\frac{p_a}{1-p_a}$, $p_a$ là tần suất của thuộc tính $a$ trong dữ liệu train, và $\tau=0.32$. Độ dịch $s_a$ là logit adjustment~\cite{logitadj} và chỉ được dùng lúc train. Trọng số DeepMAR $w_a(y_a)$~\cite{deepmar} bằng $e^{1-p_a}$ với mẫu dương và $e^{p_a}$ với mẫu âm, nên nó dời ngưỡng quyết định một lượng $1-2p_a$ trên thang logit. Giá trị $\tau=0.32$ được chọn để tổng độ dịch quyết định lúc train, gồm phần $1-2p_a$ do $w_a$ và phần do $s_a$, khớp theo bình phương tối thiểu trên 40 thuộc tính với tổng độ dịch của một quy tắc hậu xử lý. Quy tắc này lấy một mô hình chỉ train với trọng số DeepMAR, rồi cộng $0.42\,\big(\log\frac{1-p_a}{p_a}-(1-2p_a)\big)$ vào logit sau khi train. Hệ số 0.42 của quy tắc này được chọn trên các lần train leave-one-dataset-out. Ký hiệu $D$ là DINOv3 query head, $J$ là joint query head và $C$ là CLIP query head. Ở đây $z_{k,a}$ là logit của query head $k$ cho thuộc tính $a$, và $y_a$ là nhãn sau khi làm mượt với hệ số 0.05. Mask $m_a$ loại bỏ những thuộc tính không được gán nhãn trong dataset chứa ảnh đầu vào.
 
-\paragraph{Cách chọn $\tau$.} Đặt $L_a=\log\frac{1-p_a}{p_a}$. Trọng số DeepMAR đã dịch ngưỡng quyết định của thuộc tính $a$ một lượng $d_a=1-2p_a$, và độ dịch $s_a$ dịch thêm theo cùng chiều, nên train với \cref{eq:loss} dịch ngưỡng quyết định tổng cộng một lượng $d_a+\tau L_a$. Trên các tập validation, độ dịch tốt nhất cho mỗi thuộc tính đặt trên logit DeepMAR xấp xỉ $0.42\,(L_a-d_a)$, nên độ dịch tổng tốt nhất là $d_a+0.42\,(L_a-d_a)$. Khớp hai độ dịch này trên 40 thuộc tính theo bình phương tối thiểu cho $\tau=0.32$. Nếu dùng thẳng $\tau=0.42$, thuộc tính hiếm sẽ bị dịch quá xa và mô hình dự đoán quá nhiều mẫu dương.
+Lúc train, nhóm đóng băng patch embedding và tám block đầu của mỗi encoder, rồi fine-tune phần còn lại bằng AdamW trong ba epoch, với batch size 64 và trung bình động mũ (EMA) của trọng số. Learning rate là $5\times10^{-5}$ ở block trên cùng, giảm 0.75 lần qua mỗi block bên dưới, và gấp mười lần ở các query head. Mô hình nộp được train trên split train và validation của cả ba dataset. Lúc inference, trung bình logit của ba query head đi qua hàm sigmoid, và thuộc tính được dự đoán là có khi xác suất lớn hơn 0.5. Giống một ensemble của hai encoder train riêng, mỗi ảnh chỉ cần hai lượt chạy encoder, với độ trễ đo được khoảng 3.0\,ms cho mỗi ảnh trên GPU NVIDIA RTX 5090 khi chạy theo batch 128.
 
 %=====================================================================
 \section{Thí nghiệm}
 \label{sec:exp}
 
-Các thí nghiệm đi theo lập luận của phần Giới thiệu. Trước hết, nhóm kiểm tra vì sao cần hai encoder khác nhau và liệu cách trộn có học được sau khi train hay không. Tiếp theo, nhóm so sánh joint model với separate ensemble, kiểm tra vai trò của fine-tune và việc chọn encoder, rồi kiểm tra mức tăng có lặp lại không. Cuối cùng, nhóm phân tích joint query head và kiểm tra mức tăng trên tập test ẩn.
+Nhóm đánh giá các mô hình train riêng rẽ, từng query head của UniQuery, và UniQuery với trung bình ba query head. Trung bình ba query head cho Challenge\_Avg trung bình cao hơn từng query head đứng riêng và cao hơn ensemble train riêng, nên nhóm dùng cấu hình này cho bản nộp cuối.
 
-\subsection{Quy trình đánh giá}
-Nhóm dùng quy trình leave-one-dataset-out. Mô hình được train trên split train của hai dataset nguồn và được test trên split validation của dataset thứ ba. Dataset thứ ba này là held-out dataset, mô hình không thấy nó khi train. Nhóm báo cáo hai fold giữ ngoài PETA (6,963 ảnh) và Market-1501 (16,458 ảnh). Mỗi fold có 88 đến 89 nghìn ảnh train. Nhóm bỏ fold giữ ngoài PA100k vì tập train của fold đó chỉ có 18.7 nghìn ảnh. Metric là Challenge\_Avg, trung bình điều hoà của mean balanced accuracy (mA) và instance F1, tính theo điểm (nhân 100, càng cao càng tốt). Mọi mô hình train ba epoch với batch size 64, AdamW, trung bình động mũ (EMA) của trọng số và bf16. Một run là một lần train một cấu hình với một seed, và mỗi run dùng một GPU RTX 5090. Đánh giá dùng một lượt forward không lật ảnh, giống bản nộp, và joint model cần 3.04\,ms cho mỗi ảnh trên GPU này. Kết quả là của một seed nếu không ghi khác.
+\paragraph{Quy trình đánh giá.} Để mô phỏng các camera chưa từng thấy của tập test ẩn, nhóm đánh giá theo kiểu leave-one-dataset-out. Trong mỗi fold, một dataset được giữ ngoài, và mô hình không thấy ảnh nào của dataset này khi train. Mô hình chỉ được train trên split train của hai dataset còn lại, rồi được chấm trên split validation của dataset bị giữ ngoài. Fold PETA train trên PA100k và Market-1501, rồi được chấm trên 6,963 ảnh validation của PETA. Fold Market train trên PA100k và PETA, rồi được chấm trên 16,458 ảnh validation của Market-1501. Nhóm không dùng fold giữ ngoài PA100k, vì khi bỏ PA100k chỉ còn 18.7 nghìn ảnh train. Metric là Challenge\_Avg, tính theo phần trăm. Mô hình của mỗi fold được train giống mô hình nộp, chỉ khác là dữ liệu train không có split validation. Khi chấm, mỗi ảnh đi qua mô hình một lần, không lật ngang, giống bản nộp, và kết quả là của một seed nếu không ghi khác. Hệ số 0.42 dùng để chọn $\tau$ và encoder đi cùng DINOv3 được chọn trên chính các fold này, nên điểm trên fold có thể hơi lạc quan cho các lựa chọn đó. Tập test ẩn là đánh giá duy nhất không bị các lựa chọn này ảnh hưởng.
 
-\subsection{Vì sao cần hai encoder khác nhau?}
-\label{sec:two}
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Mô hình & PETA & Market & TB \\
+\midrule
+DINOv3 train riêng & 81.46 & 86.31 & 83.89 \\
+CLIP train riêng & 81.44 & 85.50 & 83.47 \\
+Ensemble của hai encoder, seed 1 & 82.45 & 86.30 & 84.38 \\
+Ensemble của hai encoder, seed 2 & 82.29 & 86.33 & 84.31 \\
+\midrule
+UniQuery, chỉ DINOv3 query head & 81.26 & 86.07 & 83.67 \\
+UniQuery, chỉ CLIP query head & 81.45 & 85.56 & 83.51 \\
+UniQuery, chỉ joint query head & 82.26 & 86.27 & 84.26 \\
+UniQuery, DINOv3 và CLIP query head & 82.24 & 86.32 & 84.28 \\
+UniQuery, trung bình ba query head & \textbf{82.54} & 86.39 & 84.46 \\
+\midrule
+Biến thể, seed 1 & 82.53 & \textbf{86.44} & \textbf{84.49} \\
+Biến thể, seed 2 & 82.51 & 86.32 & 84.42 \\
+Biến thể có hai joint query head & 82.51 & 86.43 & 84.47 \\
+\bottomrule
+\end{tabular}
+\caption{Challenge\_Avg trên held-out dataset, cùng loss ở \cref{eq:loss}. TB là trung bình hai fold, và cấu hình đã nộp là UniQuery với trung bình ba query head. Dòng DINOv3 và CLIP query head lấy trung bình hai query head này của cùng mô hình, không có joint query head. Biến thể cộng thêm điểm ngôn ngữ cho màu quần áo trên vùng thân trên hoặc thân dưới, với một bộ câu mô tả khác, và lúc train ẩn mỗi encoder khỏi joint query head với xác suất 0.25.}
+\label{tab:main}
+\end{table}
+
+\paragraph{UniQuery so với ensemble train riêng.} \Cref{tab:main} so sánh UniQuery với ensemble của hai encoder train riêng rẽ, dùng cùng kiến trúc encoder và cùng loss. Trung bình logit của ba query head trong UniQuery vượt cả hai seed của ensemble trên cả hai fold. Mức tăng này cần joint query head. Khi bỏ joint query head lúc inference, trung bình của DINOv3 query head và CLIP query head trong UniQuery không còn cao hơn ensemble. Joint query head đứng riêng cao hơn từng single-encoder query head nhưng cũng chưa vượt ensemble. Mức tăng chỉ xuất hiện khi joint query head được lấy trung bình cùng hai single-encoder query head.
+
+\paragraph{Tính nhất quán.} UniQuery chỉ hơn ensemble khoảng 0.08 đến 0.15 điểm trung bình, gần bằng khoảng chênh 0.07 điểm giữa hai seed của ensemble. Vì vậy nhóm kiểm tra xem mức tăng có lặp lại ở các lần train khác hay không. Ba dòng cuối của \cref{tab:main} là ba lần train của một biến thể UniQuery có vài thay đổi nhỏ, ghi trong chú thích của bảng, chứ không phải UniQuery train lại với seed khác. Cả bốn lần train, gồm UniQuery và ba lần của biến thể, đều có điểm trung bình hai fold cao hơn cả hai seed của ensemble. Xét riêng từng fold, bốn lần train này thắng cả 8 so sánh với hai seed của ensemble trên PETA và 7 trong 8 so sánh trên Market.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{pick.pdf}
+\caption{Joint query head so với hai single-encoder query head, trên các thuộc tính mà hai query head này chênh nhau ít nhất 2 điểm và có ít nhất 50 ảnh dương. Số liệu là trung bình hai seed của biến thể ở \cref{tab:main}.}
+\label{fig:pick}
+\end{figure}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{routing_v2.pdf}
+\caption{Cách joint query head dùng hai encoder. (a) Attention của các attention head đọc DINOv3 và đọc CLIP, trên tám ảnh validation mà mô hình đã nộp đã thấy khi train. (b, c) Thống kê trên 6,963 ảnh held-out của PETA, với mô hình fold PETA.}
+\label{fig:routing}
+\end{figure*}
+
+\paragraph{Trộn riêng cho từng thuộc tính.} Joint query head không trộn hai encoder theo một tỷ lệ chung cho mọi thuộc tính. \Cref{fig:pick} so sánh nó với hai single-encoder query head của biến thể UniQuery ở \cref{tab:main}. Tính trên mọi thuộc tính, hai seed và hai fold, joint query head cao hơn trung bình của hai single-encoder query head ở 82\% trường hợp. Ở các thuộc tính không phải màu, như tuổi, giới tính, tóc, kiểu quần áo và phụ kiện, nó bằng hoặc vượt query head tốt hơn ở 69\% trường hợp, ví dụ với ba lô, kính râm hay quần dài và quần ngắn. Ở màu quần áo, tỷ lệ này chỉ là 40\%, và joint query head thường nằm giữa hai query head. Attention của joint query head cho thấy nó chia việc giữa hai encoder theo thuộc tính (\cref{fig:routing}). Trên ảnh held-out của PETA, ở 93\% số lần một attention head đọc một ảnh cho một thuộc tính, hơn 98\% attention của nó rơi vào token của cùng một encoder (\cref{fig:routing}b). Vì vậy với mỗi thuộc tính, có thể đếm số attention head trong tám attention head đọc DINOv3. Một attention head được coi là đọc DINOv3 khi hơn nửa attention của nó rơi vào token DINOv3 (\cref{fig:routing}c). Ba lô dùng trung bình 6.4 trong tám attention head cho DINOv3, còn áo đỏ và áo hồng chỉ dùng khoảng 2.6. Nhìn chung, thuộc tính thân dưới và phụ kiện dựa nhiều hơn vào DINOv3, còn màu áo dựa nhiều hơn vào CLIP.
+
+\paragraph{Vì sao chọn DINOv3 và CLIP?} \Cref{tab:two} cho thấy encoder thứ hai nên khác encoder thứ nhất. Bản fine-tune thứ hai của cùng một encoder thêm tối đa 0.10 điểm trung bình, còn một encoder khác thêm 0.4 đến 0.6 điểm. Mức tăng này đến từ PETA. Trên Market, ghép thêm CLIP giúp ít hơn nhiều, và với $\tau=0.42$ cặp DINOv3 và CLIP còn thấp hơn DINOv3 đứng riêng. Giả thuyết của nhóm là hai encoder pretrain theo hai cách khác nhau ít cùng dự đoán sai trên một ảnh hơn hai bản fine-tune của cùng một encoder. Để kiểm tra, nhóm lấy các cặp ảnh và thuộc tính mà một mô hình dự đoán sai, đo tỷ lệ mô hình kia cũng sai trên các cặp đó, rồi lấy trung bình theo hai chiều. Hai bản fine-tune của cùng một encoder trong \cref{tab:two} trùng 89\% đến 93\% số lỗi, còn DINOv3 và CLIP chỉ trùng 72\% trên PETA và 77\% trên Market-1501. Để chọn encoder đi cùng DINOv3, nhóm thử 12 encoder trên fold PETA, gồm CLIP, AIMv2~\cite{aimv2}, EVA02-CLIP~\cite{evaclip}, MetaCLIP2~\cite{metaclip2}, MobileCLIP2~\cite{mobileclip2}, DFN-CLIP~\cite{dfn}, hai bản PE~\cite{pe} và bốn bản SigLIP2~\cite{siglip2}. Mỗi encoder được fine-tune riêng rồi lấy trung bình logit với DINOv3. Encoder nào cũng chỉ trùng 66\% đến 72\% số lỗi với DINOv3, nên điểm của cặp đi theo điểm của encoder thứ hai khi đứng riêng. Khi đứng riêng, CLIP hơn mọi encoder còn lại ít nhất 0.5 điểm, và qua năm lần train CLIP, cặp DINOv3 và CLIP đạt từ 81.04\% đến 81.23\%. Chỉ cặp với AIMv2-L rơi vào khoảng này, còn 10 encoder kia đều cho cặp thấp hơn. Công thức train được chỉnh trên DINOv3 và CLIP, nên có thể chưa hợp với các encoder khác. Trong chính UniQuery, thay CLIP bằng SigLIP2-L/16 hoặc C-RADIOv4-H~\cite{cradio4}, hay thay DINOv3 bằng C-RADIOv4-H, đều làm Challenge\_Avg trung bình hai fold giảm (\cref{tab:swap}). Mức giảm chủ yếu nằm ở PETA. Trên Market, cặp với SigLIP2-L cũng thấp hơn, còn hai cặp có C-RADIOv4-H nhỉnh hơn UniQuery.
 
 \begin{table}[t]
 \centering
@@ -144,79 +195,38 @@ DINOv3 + CLIP & \textbf{82.29} & 86.49 & \textbf{84.39} \\
 CLIP & 80.68 & 85.01 & 82.84 \\
 CLIP + CLIP (hai seed) & 80.69 & 85.12 & 82.90 \\
 DINOv3 & 80.49 & 85.31 & 82.90 \\
-DINOv3 + DINOv3 (hai công thức) & 80.66 & 85.35 & 83.00 \\
+DINOv3 + DINOv3 (hai lần train) & 80.66 & 85.35 & 83.00 \\
 DINOv3 + CLIP & \textbf{81.08} & \textbf{85.54} & \textbf{83.31} \\
 \bottomrule
 \end{tabular}
-\caption{Một encoder, hai bản fine-tune của cùng một encoder, hoặc hai encoder khác nhau, mỗi bản được fine-tune riêng. Challenge\_Avg trên held-out dataset, tính theo điểm (TB là trung bình hai fold). Hai bản CLIP khác nhau ở seed, còn hai bản DINOv3 khác nhau ở công thức train. Hai bản tốn hai lượt chạy encoder dù hai encoder giống hay khác nhau. Bản thứ hai của cùng encoder gần như không đổi trung bình, còn một encoder khác làm trung bình tăng lên.}
+\caption{Challenge\_Avg trên held-out dataset của các encoder fine-tune riêng rồi lấy trung bình logit. Các lần train này thuộc giai đoạn trước, với $\tau=0.42$ thay cho 0.32 trong \cref{eq:loss}, hoặc với weighted BCE (\cref{eq:loss} không có $s_a$), vì chỉ giai đoạn này có hai bản fine-tune của cùng một encoder. Hai bản DINOv3 là hai lần train cùng công thức.}
 \label{tab:two}
 \end{table}
 
-Thí nghiệm này kiểm tra liệu encoder thứ hai của một ensemble hai encoder có cần khác encoder thứ nhất không. Ensemble hai encoder nào cũng tốn hai lượt chạy encoder, nên một bản fine-tune thứ hai của cùng encoder là phương án thay thế tự nhiên. \Cref{tab:two} dùng các run từ giai đoạn trước của công trình, train với $\tau=0.42$ hoặc với weighted BCE (\cref{eq:loss} không có độ dịch $s_a$), vì chỉ ở giai đoạn này nhóm có hai bản fine-tune của cùng một encoder. Với cả hai loss, bản thứ hai của cùng encoder thêm tối đa 0.10 điểm trung bình, còn một encoder khác thêm 0.4 đến 0.6 điểm. So với DINOv3 một mình, phần lớn mức tăng này đến từ PETA, held-out dataset khó hơn. Điều này gợi ý rằng hai bản của cùng một encoder thường dự đoán sai ở cùng những ảnh, còn DINOv3 và CLIP dự đoán sai ở những ảnh khác nhau. Hai encoder cũng mạnh ở những thuộc tính khác nhau. Với hai encoder của separate ensemble seed 2, trên PETA, DINOv3 tốt hơn CLIP hơn 1 điểm balanced accuracy ở 12 thuộc tính, còn CLIP tốt hơn DINOv3 hơn 1 điểm ở 10 thuộc tính khác. Ở một số thuộc tính màu, khoảng chênh vượt 10 điểm theo cả hai chiều. Vì vậy thí nghiệm tiếp theo kiểm tra xem có học được một cách trộn riêng cho mỗi thuộc tính sau khi train hay không.
-
-\subsection{Có học được cách trộn sau khi train không?}
-\label{sec:frozen}
-
 \begin{table}[t]
 \centering
 \small
-\setlength{\tabcolsep}{2.5pt}
+\setlength{\tabcolsep}{2pt}
 \begin{tabular}{@{}lcccc@{}}
 \toprule
-Fusion & Tham số & PETA & Market & TB \\
+Cách trộn hai mô hình & PETA & Market & TB & Nguồn \\
 \midrule
-Trung bình logit & 0 & \textbf{82.45} & 86.30 & \textbf{84.38} \\
-Trọng số logit theo thuộc tính & 40 & 82.43 & \textbf{86.31} & 84.37 \\
-Phân loại trên vector DINOv3 & 150k & 81.15 & 85.99 & 83.57 \\
-Phân loại trên vector CLIP & 150k & 81.55 & 86.06 & 83.81 \\
-Ghép nối + MLP & 155k & 81.27 & 85.92 & 83.60 \\
-Cổng đặc trưng theo thuộc tính & 150k & 81.25 & 85.95 & 83.60 \\
-Cổng đặc trưng theo ảnh & 155k & 81.01 & 85.86 & 83.44 \\
+Trung bình logit, không học thêm & \textbf{82.45} & 86.30 & \textbf{84.38} & 89.46 \\
+Học tỷ lệ trộn mỗi thuộc tính & 82.43 & \textbf{86.31} & 84.37 & 89.49 \\
+\midrule
+\multicolumn{5}{@{}l}{\emph{Trung bình logit cộng hiệu chỉnh học từ}} \\
+\quad attribute vector của DINOv3 & 81.15 & 85.99 & 83.57 & 90.93 \\
+\quad attribute vector của CLIP & 81.55 & 86.06 & 83.81 & 90.52 \\
+\quad cả hai, nối lại qua một MLP & 81.27 & 85.92 & 83.60 & 91.02 \\
+\quad cả hai, tỷ lệ riêng mỗi thuộc tính & 81.25 & 85.95 & 83.60 & 90.97 \\
+\quad cả hai, tỷ lệ theo từng ảnh & 81.01 & 85.86 & 83.44 & 91.14 \\
 \bottomrule
 \end{tabular}
-\caption{Các fusion head train trên separate ensemble, với các encoder đã fine-tune được giữ cố định. Trừ trọng số logit theo thuộc tính, mỗi fusion head đọc attribute vector và cộng một phần hiệu chỉnh vào trung bình logit. Hai bộ phân loại chỉ đọc vector của một encoder, còn các fusion head khác đọc vector của cả hai. Mọi fusion head được train trên ảnh validation của các dataset nguồn và test trên held-out dataset.}
+\caption{Học cách trộn trên hai mô hình đã fine-tune riêng của ensemble, được giữ cố định (Challenge\_Avg trên held-out dataset). Phần hiệu chỉnh tính bằng một lớp linear, bắt đầu bằng 0, và được train với loss ở \cref{eq:loss} trên 85\% ảnh validation của hai dataset nguồn (khoảng 22 nghìn ảnh ở fold PETA và 14 nghìn ảnh ở fold Market). Cột Nguồn là Challenge\_Avg trung bình hai fold trên 15\% ảnh nguồn còn lại, mà fusion head không thấy khi train.}
 \label{tab:frozen}
 \end{table}
 
-Thí nghiệm này kiểm tra liệu một cách trộn học trên separate ensemble có thay được cách trộn đều hay không. Nhóm giữ cố định hai encoder đã fine-tune của separate ensemble và train sáu fusion head trên đầu ra của chúng (\cref{tab:frozen}). Fusion head đơn giản nhất học một trọng số cho mỗi thuộc tính để trộn hai logit. Các fusion head còn lại đọc attribute vector và cộng một phần hiệu chỉnh vào trung bình logit. Mọi phần hiệu chỉnh bắt đầu từ 0 và được train với loss logit-adjusted của \cref{eq:loss}. Để dữ liệu train fusion head là dữ liệu encoder chưa thấy, nhóm train các fusion head trên ảnh validation của hai dataset nguồn.
-
-Không fusion head nào vượt trung bình đơn giản ở cột TB. Trọng số logit theo thuộc tính vẫn gần bằng nhau, và mọi fusion head đọc attribute vector đều mất 0.6 đến 0.9 điểm. Nguyên nhân không phải do các fusion head không khớp được dữ liệu. Trên ảnh của dataset nguồn được giữ ngoài quá trình train fusion head, chính các fusion head này nâng Challenge\_Avg từ 89.2 lên khoảng 91.3 điểm ở fold PETA. Vì vậy các fusion head học những hiệu chỉnh chỉ đúng trên dataset nguồn. Fusion head linh hoạt nhất là cổng theo ảnh mất nhiều nhất trên held-out dataset. Fold giữ ngoài PA100k, vốn bị bỏ khỏi quy trình đánh giá, cho thấy giới hạn của kết quả này. Ở fold đó, các encoder được train trên ít ảnh, còn các fusion head thấy thêm khoảng 20 nghìn ảnh có nhãn mà encoder chưa thấy. Khi đó mọi fusion head đọc attribute vector đều vượt trung bình đơn giản 2.0 đến 2.7 điểm, nhưng một bộ phân loại chỉ trên vector CLIP đã đạt phần lớn mức tăng này. Vì vậy mức tăng đến từ ảnh có nhãn thêm vào, không phải từ cách trộn hai encoder tốt hơn. Khi encoder được train trên đủ dữ liệu, cách trộn học sau khi train không chuyển được sang dataset mới, nên thí nghiệm tiếp theo kiểm tra phương án còn lại là học cách trộn trong lúc train.
-
-\subsection{Joint model so với separate ensemble}
-\label{sec:main}
-
-\begin{table}[t]
-\centering
-\small
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}lccc@{}}
-\toprule
-Mô hình & PETA & Market & TB \\
-\midrule
-\multicolumn{4}{@{}l}{\emph{Encoder fine-tune riêng}} \\
-DINOv3 một mình & 81.46 & 86.31 & 83.89 \\
-CLIP một mình & 81.44 & 85.50 & 83.47 \\
-Separate ensemble & 82.45 & 86.30 & 84.38 \\
-Separate ensemble, seed 2 & 82.29 & 86.33 & 84.31 \\
-\midrule
-\multicolumn{4}{@{}l}{\emph{Encoder fine-tune cùng nhau (joint model)}} \\
-DINOv3 query head & 81.31 & 86.17 & 83.74 \\
-CLIP query head & 81.72 & 85.56 & 83.64 \\
-Joint query head & 82.10 & \textbf{86.41} & 84.26 \\
-TB hai single-encoder query head & 82.46 & 86.35 & 84.41 \\
-TB cả ba query head & \textbf{82.55} & 86.37 & \textbf{84.46} \\
-\bottomrule
-\end{tabular}
-\caption{Challenge\_Avg trên held-out dataset (điểm) của separate ensemble và joint model, cả hai train với loss của \cref{eq:loss}. Cả hai dùng hai lượt chạy encoder lúc test. TB là trung bình hai fold. Các dòng không ghi seed dùng seed 1. Dòng cuối là cấu hình đã nộp.}
-\label{tab:main}
-\end{table}
-
-Thí nghiệm này kiểm tra nhận định chính của nhóm là cách trộn học trong lúc train chuyển được sang held-out dataset. \Cref{tab:main} so sánh joint model với separate ensemble dưới loss của \cref{eq:loss}. Trung bình của ba query head trong joint model cho kết quả trung bình tốt nhất, và cao hơn cả hai seed của separate ensemble trên cả hai fold. Train chung cũng làm thay đổi các single-encoder query head. So với train riêng, chúng chỉ thay đổi trong phạm vi chênh lệch giữa hai seed, nhưng trung bình của chúng đã ngang separate ensemble.
-
-Joint query head là query head đơn lẻ tốt nhất trong \cref{tab:main}. Bên trong joint model, ba query head thấy cùng encoder và dùng cùng loss. Chúng chỉ khác nhau ở token mà chúng đọc. Tính theo TB, joint query head cao hơn DINOv3 query head, single-encoder query head tốt hơn, 0.52 điểm, và cao hơn DINOv3 fine-tune riêng 0.37 điểm. Nó chỉ thấp hơn separate ensemble 0.05 đến 0.12 điểm tuỳ seed. Joint model fine-tune cả hai encoder, nên thí nghiệm tiếp theo kiểm tra việc fine-tune này có cần thiết không.
-
-\subsection{Encoder có bắt buộc phải fine-tune, và nên chọn encoder nào?}
-\label{sec:swap}
+\paragraph{Có học được cách trộn sau khi train không?} Ensemble train riêng trộn hai mô hình bằng cách lấy trung bình logit, với cùng tỷ lệ một nửa cho mọi thuộc tính. Nhóm kiểm tra xem có thể học một cách trộn tốt hơn sau khi hai mô hình đã train xong hay không, mà không cần train chung như UniQuery. Hai mô hình được giữ nguyên, và chỉ một fusion head nhỏ đặt trên đầu ra của chúng được train (\cref{tab:frozen}). Loại fusion head thứ nhất chỉ học cho mỗi thuộc tính một tỷ lệ trộn hai logit. Năm loại còn lại cộng thêm vào trung bình logit một phần hiệu chỉnh, tính từ attribute vector của query head. Attribute vector là vector mà query head tạo ra cho mỗi thuộc tính ngay trước bộ phân loại. Tính theo điểm trung bình hai fold, không fusion head nào vượt trung bình logit thông thường, và năm loại có phần hiệu chỉnh còn làm Challenge\_Avg giảm 0.6 đến 0.9 điểm. Các fusion head không thua vì học kém. Trên ảnh nguồn mà chúng không thấy khi train, năm loại này vượt trung bình logit từ 1.1 đến 1.7 điểm. Như vậy với các fusion head nhóm đã thử, cách trộn học sau khi train chỉ đúng với dataset nguồn và không chuyển sang được dataset mới. Đây là lý do UniQuery học cách trộn ngay trong lúc train hai encoder.
 
 \begin{table}[t]
 \centering
@@ -226,123 +236,60 @@ Joint query head là query head đơn lẻ tốt nhất trong \cref{tab:main}. B
 \toprule
 Cặp encoder & Cách train & PETA & Market & TB \\
 \midrule
-DINOv3 + CLIP (đã nộp) & fine-tune & \textbf{82.55} & 86.37 & \textbf{84.46} \\
+DINOv3 + CLIP (đã nộp) & fine-tune & \textbf{82.54} & 86.39 & \textbf{84.46} \\
 DINOv3 + CLIP & đóng băng & 81.07 & 85.80 & 83.43 \\
 \midrule
-C-RADIOv4-H + CLIP & fine-tune & 81.87 & \textbf{86.43} & 84.15 \\
-DINOv3 + C-RADIOv4-H & fine-tune & 82.11 & -- & -- \\
-DINOv3 + SigLIP2-L & fine-tune & 81.81 & -- & -- \\
+C-RADIOv4-H + CLIP & fine-tune & 81.87 & 86.43 & 84.15 \\
+DINOv3 + C-RADIOv4-H & fine-tune & 82.11 & \textbf{86.50} & 84.31 \\
+DINOv3 + SigLIP2-L & fine-tune & 81.81 & 86.07 & 83.94 \\
 \bottomrule
 \end{tabular}
-\caption{Đóng băng hoặc thay các encoder của joint model. Challenge\_Avg trên held-out dataset (điểm). Mọi run dùng công thức train của mô hình đã nộp. Hai run dừng sau fold PETA vì kết quả ở fold này đã thấp hơn mô hình đã nộp, và -- đánh dấu fold không chạy.}
+\caption{Đóng băng hoặc thay encoder của UniQuery (Challenge\_Avg trên held-out dataset). Khi đóng băng, chỉ 32.6 triệu tham số được train.}
 \label{tab:swap}
 \end{table}
 
-Thí nghiệm này đặt hai câu hỏi về các encoder của joint model. Câu hỏi thứ nhất là encoder có bắt buộc phải fine-tune hay không. Khi cả hai encoder được đóng băng và chỉ ba query head cùng các phép chiếu $W$ được train (32.6 triệu tham số), joint model mất 1.0 điểm trung bình và tụt xuống dưới DINOv3 fine-tune riêng (\cref{tab:swap,tab:main}). CLIP query head mất nhiều nhất, 2.8 điểm, còn DINOv3 query head mất 0.6 điểm. Vì vậy đặc trưng DINOv3 chịu việc đóng băng tốt hơn nhiều so với đặc trưng CLIP. Train joint model với encoder đóng băng trong mười epoch thay vì ba còn làm trung bình giảm thêm, xuống 83.11 điểm. Do đó cách gộp encoder đóng băng bằng query như trong các mô hình ngôn ngữ đa phương thức~\cite{brave} không đủ trong bối cảnh của nhóm.
+\paragraph{Encoder có bắt buộc phải fine-tune không?} BRAVE~\cite{brave} giữ nguyên trọng số pretrain của nhiều encoder và chỉ train một module có các query học được để đọc token của chúng. Nhóm thử cách này với UniQuery, bằng cách đóng băng cả hai encoder và chỉ train ba query head cùng hai lớp linear. Khi đó UniQuery mất 1.0 điểm trung bình và thấp hơn cả DINOv3 fine-tune riêng (\cref{tab:swap}). CLIP query head mất 2.7 điểm, còn DINOv3 query head chỉ mất 0.6 điểm. Vì vậy trong bài toán này, encoder cần được fine-tune, và CLIP chịu ảnh hưởng nhiều hơn DINOv3 khi bị đóng băng.
 
-Câu hỏi thứ hai là các encoder mới hơn có phải là lựa chọn tốt hơn không. Nhóm lần lượt thay một encoder bằng SigLIP2-L/16~\cite{siglip2} hoặc bằng C-RADIOv4-H~\cite{cradio4}, một mô hình distill nhiều mô hình thầy, trong đó có SigLIP2 và DINOv3, vào một mô hình duy nhất. Không cặp nào vượt DINOv3 và CLIP trên PETA. Cặp C-RADIOv4-H và CLIP, cặp duy nhất được test trên cả hai fold, cũng thấp hơn ở cột TB. Khi fine-tune riêng, C-RADIOv4-H đạt 83.88 điểm trung bình, ngang DINOv3 một mình (\cref{tab:main}), nhưng ghép với CLIP kém hơn, và phần mất mát lại đến từ PETA. SigLIP2 làm giảm cả AUC trung bình lẫn precision trên PETA. Query head của nó dự đoán có kính ở 22\% ảnh PETA, so với 14\% của CLIP query head trong joint model (b) ở \cref{tab:var} và 7\% trong nhãn, với lỗi tương tự ở thuộc tính hói và tuổi già. Các thuộc tính vùng đầu này chỉ chiếm một hoặc hai token trong ảnh cắt $224\times112$, trong khi checkpoint SigLIP2 mà nhóm dùng được pretrain ở $384\times384$. Nhóm chưa kiểm tra liệu ảnh đầu vào lớn hơn có thu hẹp khoảng cách này hay không.
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.74\linewidth]{text_auc.pdf}
+\caption{AUC zero-shot của điểm ngôn ngữ trên ảnh validation, mỗi điểm một thuộc tính. Các điểm thấp hơn đường chéo quá 0.05 được ghi tên.}
+\label{fig:zsauc}
+\end{figure}
 
-\subsection{Mức tăng có lặp lại không?}
-\label{sec:variants}
+\paragraph{Điểm ngôn ngữ của CLIP có giúp không?} Câu mô tả thuộc tính nào cũng nói về một người, nên độ giống của ảnh với câu thuộc tính chứa một phần chung với độ giống của ảnh với câu \texttt{a person}. Phần chung này chỉ đo mức độ ảnh giống một người, không cho biết người đó có thuộc tính hay không. Trừ nó đi sẽ giữ lại phần riêng của thuộc tính. \Cref{fig:zsauc} kiểm tra điều này trước khi train bằng AUC (area under the ROC curve). AUC là xác suất một ảnh có thuộc tính nhận điểm cao hơn một ảnh không có thuộc tính. Trên PETA, phép trừ nâng AUC trung bình từ 0.68 lên 0.76 và làm AUC tăng ở 37 trong 40 thuộc tính, và Market-1501 cho kết quả cùng chiều. Sau khi train, lợi ích nhỏ hơn nhiều. Bỏ điểm ngôn ngữ chỉ làm Challenge\_Avg giảm 0.15 điểm ở PETA và 0.05 điểm ở Market, cùng cỡ với khoảng chênh giữa hai seed. Một cách giải thích là khi CLIP được fine-tune trên dữ liệu có nhãn, CLIP query head học được phần lớn thông tin này trực tiếp từ token của ảnh. Vì vậy điểm ngôn ngữ mang thông tin đúng về thuộc tính nhưng chỉ là một thành phần phụ, không phải nguồn chính của mức tăng của UniQuery.
 
 \begin{table}[t]
 \centering
 \small
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}lccc@{}}
-\toprule
-Mô hình & PETA & Market & TB \\
-\midrule
-Separate ensemble, seed 1 & 82.45 & 86.30 & 84.38 \\
-Separate ensemble, seed 2 & 82.29 & 86.33 & 84.31 \\
-\midrule
-(a) Joint model (đã nộp) & 82.55 & 86.37 & 84.46 \\
-(b) (a) + color anchor, token drop & 82.53 & 86.44 & 84.49 \\
-(c) (b), seed thứ hai & 82.51 & 86.32 & 84.42 \\
-(d) (b) + joint query head thứ hai & 82.51 & 86.43 & 84.47 \\
-\midrule
-(e) (b) + token tầng giữa & 82.37 & 86.38 & 84.38 \\
-(f) (b) + query khởi tạo từ text & 82.23 & 86.48 & 84.36 \\
-(g) (a) + attention phẳng hơn cho quần áo & 82.39 & 86.35 & 84.37 \\
-\bottomrule
-\end{tabular}
-\caption{Các run của joint model trên held-out dataset, Challenge\_Avg tính theo điểm. Run (a) đến (d) giữ nguyên thiết kế của joint query head, còn run (e) đến (g) thay đổi chính joint query head.}
-\label{tab:var}
-\end{table}
-
-Thí nghiệm này kiểm tra liệu mức tăng trong \cref{tab:main} là thật hay do ngẫu nhiên. Mức tăng gần bằng khoảng chênh giữa hai seed của cùng một mô hình. Run (b) và (c) trong \cref{tab:var}, hai seed của joint model, chênh nhau 0.07 điểm trung bình, và hai seed của separate ensemble cũng chênh nhau 0.07 điểm. Vì vậy nhóm hỏi mức tăng có lặp lại không, chứ không hỏi nó lớn bao nhiêu. Run (b) thêm hai chi tiết vào mô hình đã nộp (a). CLIP query head của nó còn so sánh 24 thuộc tính màu với đặc trưng patch của CLIP (color anchor), và trong lúc train, joint query head bỏ toàn bộ token của một encoder với xác suất 0.25 (token drop). Run (c) là run (b) với seed khác, và run (d) thêm cho run (b) một joint query head thứ hai. So với hai seed của separate ensemble, bốn run này thắng cả 8 so sánh trên PETA và 7 trong 8 so sánh trên Market. Lần thua duy nhất là run (c) trên Market, thấp hơn seed 2 của separate ensemble 0.01 điểm. Tính trung bình, bốn run cao hơn trung bình hai seed của separate ensemble khoảng 0.15 điểm trên PETA và 0.08 điểm trên Market. Không chi tiết thêm vào nào tốt hơn rõ rệt so với run (a).
-
-Run (e) đến (g) thay đổi chính joint query head. Chúng thêm token tầng giữa, khởi tạo attribute query từ text embedding của CLIP, hoặc ép attention phẳng hơn cho 28 query về quần áo. Trên PETA, mỗi run này đều thấp hơn bốn run giữ nguyên thiết kế, và điểm trung bình của chúng lùi về mức của separate ensemble. Không thay đổi nào bên trong joint query head làm mức tăng của run (a) lớn hơn.
-
-\subsection{Joint query head dùng hai encoder như thế nào?}
-\label{sec:routing}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{pick.pdf}
-\caption{Joint query head tiến về phía single-encoder query head tốt hơn. Mỗi điểm là một thuộc tính trong một run, với balanced accuracy đo trên held-out dataset. Trục x là độ lớn khoảng chênh giữa DINOv3 query head và CLIP query head của cùng một joint model, trục y là phần joint query head hơn trung bình của hai query head đó. Điểm nằm đúng trên đường ngang bằng trung bình của hai single-encoder query head, điểm nằm đúng trên đường đứt bằng query head tốt hơn. Các hình thoi là trung bình của các điểm trong bốn khoảng giá trị của trục x, kèm khoảng tin cậy bootstrap 95\% lấy mẫu lại theo thuộc tính. Dữ liệu từ run (b) và (c) của \cref{tab:var}, hai seed của cùng một thiết kế, trên cả hai fold.}
-\label{fig:pick}
-\end{figure}
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\linewidth]{routing.pdf}
-\caption{Cách joint query head dùng hai encoder trên ảnh của \cref{fig:arch}. (a) Với ba attribute query, hình vẽ tổng attention của các attention head đọc token DINOv3 (xanh dương) và của các attention head đọc token CLIP (cam), trên lưới patch của encoder tương ứng, mỗi ô là một token. (b) Tỷ lệ attention mà mỗi attention head trong tám attention head đặt lên token DINOv3, cho cả 40 thuộc tính. Ô xanh là attention head đọc DINOv3, ô cam là attention head đọc CLIP, ô nhạt là attention head trộn cả hai. Các số phía trên đếm số attention head đọc DINOv3, các vạch đen chia nhóm thuộc tính, và các thuộc tính của (a) được in đậm.}
-\label{fig:routing}
-\end{figure*}
-
-Phân tích này xem joint query head biến hai encoder thành một dự đoán tốt hơn như thế nào. \Cref{fig:pick} so sánh, cho từng thuộc tính, joint query head với hai single-encoder query head của cùng mô hình. Nếu joint query head chỉ lấy trung bình hai single-encoder query head, các điểm sẽ nằm đúng trên đường ngang. Nếu nó luôn đi theo query head tốt hơn, các điểm sẽ nằm đúng trên đường đứt. Trong 148 điểm, 82\% nằm phía trên đường ngang, và khoảng một nửa nằm trên hoặc phía trên đường đứt. Joint query head cũng tăng nhiều hơn ở nơi khoảng chênh giữa hai single-encoder query head lớn hơn. Hệ số tương quan Pearson giữa mức tăng của nó và khoảng chênh là 0.52, chủ yếu do vài thuộc tính có khoảng chênh lớn. Với run (b) và (c), xét theo mA, joint query head chỉ kém khoảng 0.25 điểm so với một phép chọn biết trước single-encoder query head nào tốt hơn cho từng thuộc tính trên PETA, và ngang hoặc vượt phép chọn đó trên Market. Với hai bản train lại của thiết kế đã nộp, nó kém phép chọn này từ 0.3 đến 0.9 điểm. Trung bình cố định không thể chọn như vậy, còn joint query head chọn được mà không dùng thông tin nào về held-out dataset.
-
-\Cref{fig:routing} cho thấy cách chọn này trên ảnh của \cref{fig:arch}. Mỗi attention head của joint query head có thể trộn token của cả hai encoder, nhưng gần như không bao giờ làm vậy. Trong 320 cặp attention head và thuộc tính, 312 cặp đặt hơn 99\% trọng số lên một encoder, và tám cặp còn lại đặt ít nhất 71\% lên một encoder (\cref{fig:routing}b). Encoder mà một attention head đọc không cố định. Nó thay đổi theo thuộc tính, và từ ba đến sáu trong tám attention head đọc DINOv3 tuỳ thuộc tính. Ở \cref{fig:routing}a, các attention head DINOv3 của query mũ (hat) nhìn vào đỉnh đầu, còn các attention head CLIP nhìn vào mặt và vai ngay bên dưới. Với thuộc tính áo trắng (upper white), các attention head DINOv3 nhìn vào áo khoác, còn các attention head CLIP nhìn vào vài token ở mép ảnh. Các token này có thể là token nền mà vision transformer dùng để lưu thông tin toàn cục của ảnh~\cite{registers}, nhưng nhóm chưa kiểm tra điều này. Với thuộc tính quần đen (lower black), cả hai encoder đều được đọc ở chân và hông. Vì vậy mỗi thuộc tính chia attention head giữa hai encoder theo cách riêng, khớp với mức tăng theo từng thuộc tính ở \cref{fig:pick}.
-
-Kiểu chia này không chỉ có ở một ảnh. Nhóm chạy một bản train lại của joint model fold PETA, với cùng seed, trên toàn bộ ảnh held-out của PETA và đo tỷ lệ attention mà mỗi attention head đặt lên token DINOv3. Trong 92.1\% bộ ba gồm ảnh, attention head và thuộc tính, tỷ lệ này lớn hơn 99\% hoặc nhỏ hơn 1\%. Trong 83.1\% cặp attention head và thuộc tính, attention head đọc cùng một encoder ở hơn 90\% số ảnh. Số attention head đọc DINOv3 thay đổi theo thuộc tính, từ hai đến bảy trong tám attention head.
-
-\subsection{Tập test ẩn}
-\label{sec:test}
-
-\begin{table}[t]
-\centering
-\small
-\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}llc@{}}
 \toprule
 Bản nộp & Loss & Challenge\_Avg \\
 \midrule
-Separate ensemble & weighted BCE$^\dagger$ & 0.7893 \\
-Separate ensemble & logit-adjusted & 0.7989 \\
-Joint model (b) & logit-adjusted & 0.7992 \\
-Joint model (a) & logit-adjusted & \textbf{0.8001} \\
+Ensemble train riêng & weighted BCE$^\dagger$ & 0.7893 \\
+Ensemble train riêng & logit-adjusted & 0.7989 \\
+UniQuery, biến thể & logit-adjusted & 0.7992 \\
+UniQuery (bản nộp) & logit-adjusted & 0.8001 \\
 \bottomrule
 \end{tabular}
-\caption{Tập test ẩn của UPAR 2027 Track 1. Cả bốn bản nộp dùng DINOv3 và CLIP, hai lượt chạy encoder cho mỗi ảnh và ngưỡng cố định của \cref{eq:rule}. Challenge\_Avg theo thang 0--1 của bảng xếp hạng. Các mô hình cuối được train trên split train và validation của cả ba dataset. Thiết kế (a) và (b) là thiết kế ở \cref{tab:var}. $^\dagger$Có WiSE-FT cho CLIP.}
+\caption{Tập test ẩn của UPAR 2027 Track 1, thang 0 đến 1. Mô hình cuối được train trên split train và validation của cả ba dataset. Mọi bản nộp dùng ngưỡng 0.5, không có bước hậu xử lý, và biến thể là biến thể ở \cref{tab:main}. $^\dagger$Có WiSE-FT~\cite{wiseft} cho CLIP.}
 \label{tab:test}
 \end{table}
 
-So sánh này kiểm tra liệu mức tăng trên held-out dataset có xuất hiện trên tập test ẩn hay không. \Cref{tab:test} liệt kê bốn bản nộp. Chuyển separate ensemble sang loss logit-adjusted, đồng thời bỏ WiSE-FT~\cite{wiseft} cho CLIP, tăng khoảng một điểm ở cùng ngưỡng, nên khoảng chênh này không chỉ đến từ loss. Cả hai joint model đều cao hơn separate ensemble dùng cùng loss. Các khoảng chênh này nhỏ ngang khoảng chênh giữa hai joint model, nên tập test ẩn khớp với held-out dataset về chiều của mức tăng nhưng không đo được độ lớn của nó.
+\paragraph{Tập test ẩn.} Trên tập test ẩn, cả hai bản UniQuery đều cao hơn ensemble train riêng dùng cùng loss (\cref{tab:test}). Các khoảng chênh này chỉ cỡ khoảng chênh giữa hai bản UniQuery, nên tập test ẩn cho cùng chiều với held-out dataset nhưng không đủ để đo độ lớn của mức tăng. Bản nộp cuối của nhóm là UniQuery.
 
 %=====================================================================
 \section{Hạn chế}
 \label{sec:limits}
 
-Các hạn chế chính của nghiên cứu này như sau.
-\begin{itemize}
-\item Mức tăng của joint model nhỏ và gần bằng khoảng chênh giữa hai seed của cùng một mô hình. Bằng chứng cho mức tăng đến từ việc nó lặp lại qua các run và hai held-out dataset, không đến từ độ lớn của nó. Thiết kế đã nộp (a) chỉ có một seed, và phần lớn các dòng khác cũng chỉ có một seed, không có thanh sai số.
-\item Nhóm chỉ test hai trong ba fold có thể có, vì giữ ngoài PA100k để lại quá ít ảnh train. Ở fold đó, các fusion head trên separate ensemble có vượt trung bình đơn giản, nên nhận định về việc học cách trộn sau khi train chỉ đúng khi encoder được train trên đủ dữ liệu.
-\item Nhóm chưa train, theo cùng quy trình đánh giá, một mô hình gộp hai encoder thành một vector như C$^2$T-Net.
-\item Giá trị $\tau$ được rút ra từ các ảnh validation, trong đó có cả các held-out dataset của nhóm.
-\item \Cref{tab:two} dùng các run của công thức train cũ, và hai bản DINOv3 trong đó khác nhau ở công thức train chứ không chỉ ở seed.
-\item \Cref{fig:pick} dùng run (b) và (c). Với các bản train lại của thiết kế đã nộp, từ 70\% đến 85\% số điểm nằm phía trên đường ngang, hơi ít hơn ở \cref{fig:pick}.
-\item Các fusion head ở \cref{tab:frozen} học từ ảnh validation của các dataset nguồn, một tập nhỏ hơn tập mà joint model học.
-\item Các phép thay encoder ở \cref{tab:swap} chỉ dùng một seed, hai trong số đó chỉ có fold PETA, và query head của SigLIP2 không có điểm ngôn ngữ.
-\item Thống kê attention trên toàn bộ ảnh held-out mới có cho fold PETA, và \cref{fig:arch,fig:routing} dùng một ảnh mà mô hình đã nộp đã thấy khi train.
-\end{itemize}
-Những hạn chế này làm độ lớn của mức tăng chưa chắc chắn, còn chiều của mức tăng dựa trên các run lặp lại.
+Các kết quả của bài được đo trong bài toán PAR của UPAR 2027, với ba dataset PA100k, PETA, Market-1501 và bộ 40 thuộc tính của cuộc thi. Nhóm chưa kiểm tra UniQuery trên các dataset PAR khác, trên các bài toán khác về người, hay với những cặp encoder khác ngoài các cặp có trong bài. Vì vậy chưa thể khẳng định cách trộn theo từng thuộc tính mang lại lợi ích tương tự trong những bối cảnh đó. Ngoài ra, phần lớn kết quả chỉ có một seed.
 
 %=====================================================================
 \section{Kết luận}
 \label{sec:conclusion}
 
-Trong các thí nghiệm của nhóm, lấy trung bình DINOv3 và CLIP làm tăng Challenge\_Avg trên held-out dataset nhiều hơn hẳn so với lấy trung bình hai bản fine-tune của cùng một encoder, và hai encoder này mạnh ở những thuộc tính khác nhau. Các encoder như vậy thường được kết hợp sau khi train bằng cách lấy trung bình logit, và ở hai fold chính, cách trộn học trên các encoder đã train không chuyển được sang dataset mới. Nhóm thấy học cách trộn trong lúc train tốt hơn. Joint model, gồm một joint query head đọc cả hai encoder và query head riêng của mỗi encoder, vượt separate ensemble trên cả hai held-out dataset ở gần như mọi run giữ nguyên thiết kế. Mức tăng này cần encoder được fine-tune, và các encoder mới hơn mà nhóm thử không vượt DINOv3 và CLIP trên PETA. Bên trong joint query head, gần như mọi attention head chỉ đọc một encoder cho mỗi thuộc tính, và phần lớn thuộc tính tiến về phía encoder phù hợp hơn với nó. Bước tiếp theo là kiểm tra liệu mức tăng có lớn hơn khi các dataset nguồn đa dạng hơn hay không.
+Bài báo này nghiên cứu cách kết hợp hai foundation encoder cho nhận dạng thuộc tính người đi bộ trên camera chưa từng thấy. DINOv3 và CLIP ít cùng dự đoán sai trên một ảnh hơn hai bản của cùng một encoder, phù hợp với việc chúng được pretrain theo hai cách khác nhau, và ghép chúng có lợi hơn ghép hai bản như vậy. UniQuery fine-tune hai encoder trong cùng một mạng và để một query riêng cho mỗi thuộc tính quyết định lấy thông tin từ encoder nào. Phát hiện chính của bài là cách trộn cần được học cùng lúc với encoder, qua một joint query head đặt cạnh query head riêng của mỗi encoder. Bỏ joint query head lúc inference thì UniQuery không còn vượt ensemble, còn các cách trộn nhóm thử trên những mô hình đã train xong chỉ khớp với dataset nguồn. Bên trong joint query head, mỗi attention head chọn hẳn một encoder, với thuộc tính thân dưới và phụ kiện nghiêng về DINOv3, còn màu áo nghiêng về CLIP. Với PAR xuyên domain, kết quả này gợi ý nên để mô hình tự phân công encoder cho từng thuộc tính ngay trong lúc train, thay vì trộn các mô hình đã train xong theo một tỷ lệ chung.
 
 {\small
 \bibliographystyle{ieeenat_fullname}

@@ -1,0 +1,388 @@
+{
+ "DINOv3 alone": 80.47265489953743,
+ "partners": {
+  "CLIP-L/14": {
+   "run": "P_clipL224",
+   "input": "224x112",
+   "alone": 80.55906343046512,
+   "pair": 81.08957570703342,
+   "overlap_x_given_d": 71.40977331180095,
+   "overlap_d_given_x": 72.83875297419316
+  },
+  "AIMv2-L/14": {
+   "run": "Q_aimv2L224",
+   "input": "224x112",
+   "alone": 79.54788393220747,
+   "pair": 81.07344447127171,
+   "overlap_x_given_d": 70.21951073628806,
+   "overlap_d_given_x": 65.14983351831299
+  },
+  "EVA02-CLIP-L/14": {
+   "run": "Q_eva02L224",
+   "input": "224x112",
+   "alone": 80.03273548727076,
+   "pair": 80.95889971620011,
+   "overlap_x_given_d": 71.5593037861116,
+   "overlap_d_given_x": 67.3876309564042
+  },
+  "SigLIP2-So400m/14": {
+   "run": "Q_sig2So14",
+   "input": "224x112",
+   "alone": 79.62539583528071,
+   "pair": 80.9378039104446,
+   "overlap_x_given_d": 69.34625276631378,
+   "overlap_d_given_x": 65.01794526693585
+  },
+  "MetaCLIP2-H/14": {
+   "run": "P_mc2H168",
+   "input": "168x84",
+   "alone": 79.68825785598044,
+   "pair": 80.90928301302885,
+   "overlap_x_given_d": 69.40606495603804,
+   "overlap_d_given_x": 67.19166184134338
+  },
+  "PE-Core-L/14": {
+   "run": "PEc_L",
+   "input": "224x112",
+   "alone": 80.03863590570539,
+   "pair": 80.89493009309673,
+   "overlap_x_given_d": 71.77462766911896,
+   "overlap_d_given_x": 68.65381314720523
+  },
+  "SigLIP2-So400m/16": {
+   "run": "Q_sig2So16",
+   "input": "256x128",
+   "alone": 79.59970745633372,
+   "pair": 80.86894683376575,
+   "overlap_x_given_d": 69.86063759794247,
+   "overlap_d_given_x": 64.75937014859171
+  },
+  "MobileCLIP2-L/14": {
+   "run": "Q_mclip2L224",
+   "input": "224x112",
+   "alone": 79.75198163226536,
+   "pair": 80.83610701318506,
+   "overlap_x_given_d": 71.21239308571087,
+   "overlap_d_given_x": 68.17843440416883
+  },
+  "SigLIP2-L/16-384": {
+   "run": "Q_sig2L384",
+   "input": "256x128",
+   "alone": 79.50570014783781,
+   "pair": 80.82398328613662,
+   "overlap_x_given_d": 71.93013936240206,
+   "overlap_d_given_x": 65.82375478927203
+  },
+  "SigLIP2-L/16-256": {
+   "run": "Q_sig2L256",
+   "input": "256x128",
+   "alone": 78.72077474102142,
+   "pair": 80.63924490140778,
+   "overlap_x_given_d": 69.97428075841856,
+   "overlap_d_given_x": 62.73258619765135
+  },
+  "DFN-CLIP-L/14": {
+   "run": "Q_dfnL224",
+   "input": "224x112",
+   "alone": 78.8270569629952,
+   "pair": 80.64262343416661,
+   "overlap_x_given_d": 70.61427118846821,
+   "overlap_d_given_x": 63.377710972729226
+  },
+  "PE-Spatial-L/14": {
+   "run": "PEs_L",
+   "input": "224x112",
+   "alone": 78.75831570975058,
+   "pair": 80.51619096482796,
+   "overlap_x_given_d": 70.33913511573658,
+   "overlap_d_given_x": 62.19918548685672
+  }
+ },
+ "corr_overlap_pair": 0.13959066296183148,
+ "clip_seed2": {
+  "alone": 80.73188327093484,
+  "pair_with_clip": 80.7898733641223,
+  "overlap_clip2_given_clip1": 88.95125373680678,
+  "pair_with_dinov3": 81.22585526780966
+ },
+ "sym_overlap_with_dinov3": [
+  72.12426314299705,
+  67.68467212730052,
+  69.4734673712579,
+  67.18209901662482,
+  68.29886339869071,
+  70.21422040816209,
+  67.31000387326709,
+  69.69541374493984,
+  68.87694707583705,
+  66.35343347803496,
+  66.99599108059873,
+  66.26916030129667
+ ],
+ "pairs_without_dinov3": {
+  "CLIP-L/14 + AIMv2-L/14": {
+   "sym_overlap": 73.74056500511806,
+   "pair": 80.6797622852737
+  },
+  "CLIP-L/14 + EVA02-CLIP-L/14": {
+   "sym_overlap": 74.296158220399,
+   "pair": 80.94873505722188
+  },
+  "CLIP-L/14 + SigLIP2-So400m/14": {
+   "sym_overlap": 73.03367089370161,
+   "pair": 80.6683034186647
+  },
+  "CLIP-L/14 + MetaCLIP2-H/14": {
+   "sym_overlap": 72.768791939113,
+   "pair": 80.69647245296069
+  },
+  "CLIP-L/14 + PE-Core-L/14": {
+   "sym_overlap": 76.2463768151858,
+   "pair": 80.73709319790824
+  },
+  "CLIP-L/14 + SigLIP2-So400m/16": {
+   "sym_overlap": 72.52157690868306,
+   "pair": 80.65302724734362
+  },
+  "CLIP-L/14 + MobileCLIP2-L/14": {
+   "sym_overlap": 76.56995302195234,
+   "pair": 80.64159115476562
+  },
+  "CLIP-L/14 + SigLIP2-L/16-384": {
+   "sym_overlap": 73.75183966450409,
+   "pair": 80.67707376111994
+  },
+  "CLIP-L/14 + SigLIP2-L/16-256": {
+   "sym_overlap": 71.94831566607806,
+   "pair": 80.38380815720946
+  },
+  "CLIP-L/14 + DFN-CLIP-L/14": {
+   "sym_overlap": 72.36473988596815,
+   "pair": 80.43582356904763
+  },
+  "CLIP-L/14 + PE-Spatial-L/14": {
+   "sym_overlap": 71.0676268454802,
+   "pair": 80.37351037875045
+  },
+  "AIMv2-L/14 + EVA02-CLIP-L/14": {
+   "sym_overlap": 72.74959156317746,
+   "pair": 80.4053682443571
+  },
+  "AIMv2-L/14 + SigLIP2-So400m/14": {
+   "sym_overlap": 73.71060655400584,
+   "pair": 80.18699751992605
+  },
+  "AIMv2-L/14 + MetaCLIP2-H/14": {
+   "sym_overlap": 70.59578497031221,
+   "pair": 80.2274236380818
+  },
+  "AIMv2-L/14 + PE-Core-L/14": {
+   "sym_overlap": 75.09561243589025,
+   "pair": 80.34677652017201
+  },
+  "AIMv2-L/14 + SigLIP2-So400m/16": {
+   "sym_overlap": 73.2360916347106,
+   "pair": 80.155789034191
+  },
+  "AIMv2-L/14 + MobileCLIP2-L/14": {
+   "sym_overlap": 76.35396128157564,
+   "pair": 80.0248612120404
+  },
+  "AIMv2-L/14 + SigLIP2-L/16-384": {
+   "sym_overlap": 75.06005156345775,
+   "pair": 80.06856592191683
+  },
+  "AIMv2-L/14 + SigLIP2-L/16-256": {
+   "sym_overlap": 73.99160964673102,
+   "pair": 79.90908085039328
+  },
+  "AIMv2-L/14 + DFN-CLIP-L/14": {
+   "sym_overlap": 73.79787137952081,
+   "pair": 79.7299649220306
+  },
+  "AIMv2-L/14 + PE-Spatial-L/14": {
+   "sym_overlap": 72.73674367443847,
+   "pair": 79.70999688042328
+  },
+  "EVA02-CLIP-L/14 + SigLIP2-So400m/14": {
+   "sym_overlap": 71.4554098930334,
+   "pair": 80.57887029517799
+  },
+  "EVA02-CLIP-L/14 + MetaCLIP2-H/14": {
+   "sym_overlap": 69.95968254036589,
+   "pair": 80.50658537867056
+  },
+  "EVA02-CLIP-L/14 + PE-Core-L/14": {
+   "sym_overlap": 74.04873102103831,
+   "pair": 80.65102549631463
+  },
+  "EVA02-CLIP-L/14 + SigLIP2-So400m/16": {
+   "sym_overlap": 71.26455286640491,
+   "pair": 80.48952789943851
+  },
+  "EVA02-CLIP-L/14 + MobileCLIP2-L/14": {
+   "sym_overlap": 73.73647110638034,
+   "pair": 80.34851653923012
+  },
+  "EVA02-CLIP-L/14 + SigLIP2-L/16-384": {
+   "sym_overlap": 72.1444932597349,
+   "pair": 80.40282700447699
+  },
+  "EVA02-CLIP-L/14 + SigLIP2-L/16-256": {
+   "sym_overlap": 70.37740324324355,
+   "pair": 80.20502198551488
+  },
+  "EVA02-CLIP-L/14 + DFN-CLIP-L/14": {
+   "sym_overlap": 70.85062885174521,
+   "pair": 80.14213617163396
+  },
+  "EVA02-CLIP-L/14 + PE-Spatial-L/14": {
+   "sym_overlap": 71.00119092022132,
+   "pair": 80.12062229462835
+  },
+  "SigLIP2-So400m/14 + MetaCLIP2-H/14": {
+   "sym_overlap": 69.62641704093771,
+   "pair": 80.36404684286454
+  },
+  "SigLIP2-So400m/14 + PE-Core-L/14": {
+   "sym_overlap": 73.128998469252,
+   "pair": 80.31897952062906
+  },
+  "SigLIP2-So400m/14 + SigLIP2-So400m/16": {
+   "sym_overlap": 87.02188489776839,
+   "pair": 79.69098865165763
+  },
+  "SigLIP2-So400m/14 + MobileCLIP2-L/14": {
+   "sym_overlap": 74.86864508147933,
+   "pair": 80.13289582692404
+  },
+  "SigLIP2-So400m/14 + SigLIP2-L/16-384": {
+   "sym_overlap": 76.57766687219744,
+   "pair": 80.14758252005859
+  },
+  "SigLIP2-So400m/14 + SigLIP2-L/16-256": {
+   "sym_overlap": 75.12882388496843,
+   "pair": 79.76666454786704
+  },
+  "SigLIP2-So400m/14 + DFN-CLIP-L/14": {
+   "sym_overlap": 72.61826627412118,
+   "pair": 79.8336955269728
+  },
+  "SigLIP2-So400m/14 + PE-Spatial-L/14": {
+   "sym_overlap": 70.3452110330694,
+   "pair": 79.96454653610762
+  },
+  "MetaCLIP2-H/14 + PE-Core-L/14": {
+   "sym_overlap": 71.61904020948889,
+   "pair": 80.43559185487277
+  },
+  "MetaCLIP2-H/14 + SigLIP2-So400m/16": {
+   "sym_overlap": 69.21628948241329,
+   "pair": 80.34544162908897
+  },
+  "MetaCLIP2-H/14 + MobileCLIP2-L/14": {
+   "sym_overlap": 72.50389416272989,
+   "pair": 80.25645173706162
+  },
+  "MetaCLIP2-H/14 + SigLIP2-L/16-384": {
+   "sym_overlap": 70.03856772361054,
+   "pair": 80.39352134022994
+  },
+  "MetaCLIP2-H/14 + SigLIP2-L/16-256": {
+   "sym_overlap": 69.13500316377062,
+   "pair": 80.09152111713333
+  },
+  "MetaCLIP2-H/14 + DFN-CLIP-L/14": {
+   "sym_overlap": 70.80163923806602,
+   "pair": 79.8941107583664
+  },
+  "MetaCLIP2-H/14 + PE-Spatial-L/14": {
+   "sym_overlap": 68.23269638861646,
+   "pair": 79.85249447909757
+  },
+  "PE-Core-L/14 + SigLIP2-So400m/16": {
+   "sym_overlap": 72.71392956025893,
+   "pair": 80.34174484860678
+  },
+  "PE-Core-L/14 + MobileCLIP2-L/14": {
+   "sym_overlap": 75.55379066851656,
+   "pair": 80.3453068938827
+  },
+  "PE-Core-L/14 + SigLIP2-L/16-384": {
+   "sym_overlap": 75.14378502150035,
+   "pair": 80.25632456914404
+  },
+  "PE-Core-L/14 + SigLIP2-L/16-256": {
+   "sym_overlap": 73.7210282974686,
+   "pair": 80.04463375410566
+  },
+  "PE-Core-L/14 + DFN-CLIP-L/14": {
+   "sym_overlap": 72.82972595735392,
+   "pair": 80.10797640053762
+  },
+  "PE-Core-L/14 + PE-Spatial-L/14": {
+   "sym_overlap": 75.32626606309547,
+   "pair": 79.98336446866888
+  },
+  "SigLIP2-So400m/16 + MobileCLIP2-L/14": {
+   "sym_overlap": 74.3031416980504,
+   "pair": 80.12113478079495
+  },
+  "SigLIP2-So400m/16 + SigLIP2-L/16-384": {
+   "sym_overlap": 76.03466848459621,
+   "pair": 80.04011292514609
+  },
+  "SigLIP2-So400m/16 + SigLIP2-L/16-256": {
+   "sym_overlap": 74.84712193929477,
+   "pair": 79.7550992603825
+  },
+  "SigLIP2-So400m/16 + DFN-CLIP-L/14": {
+   "sym_overlap": 72.14951077493332,
+   "pair": 79.80612521127847
+  },
+  "SigLIP2-So400m/16 + PE-Spatial-L/14": {
+   "sym_overlap": 70.28783239102327,
+   "pair": 79.88808486021229
+  },
+  "MobileCLIP2-L/14 + SigLIP2-L/16-384": {
+   "sym_overlap": 76.13655782852923,
+   "pair": 80.11663327081881
+  },
+  "MobileCLIP2-L/14 + SigLIP2-L/16-256": {
+   "sym_overlap": 74.86475553514495,
+   "pair": 79.89127040953485
+  },
+  "MobileCLIP2-L/14 + DFN-CLIP-L/14": {
+   "sym_overlap": 78.61118349540673,
+   "pair": 79.71928628306824
+  },
+  "MobileCLIP2-L/14 + PE-Spatial-L/14": {
+   "sym_overlap": 72.71842273713156,
+   "pair": 79.80413275494634
+  },
+  "SigLIP2-L/16-384 + SigLIP2-L/16-256": {
+   "sym_overlap": 83.58637043392258,
+   "pair": 79.29610089065747
+  },
+  "SigLIP2-L/16-384 + DFN-CLIP-L/14": {
+   "sym_overlap": 74.29286286077695,
+   "pair": 79.78494086031208
+  },
+  "SigLIP2-L/16-384 + PE-Spatial-L/14": {
+   "sym_overlap": 71.4522383913031,
+   "pair": 79.6746612313513
+  },
+  "SigLIP2-L/16-256 + DFN-CLIP-L/14": {
+   "sym_overlap": 73.13895606565801,
+   "pair": 79.42694473095713
+  },
+  "SigLIP2-L/16-256 + PE-Spatial-L/14": {
+   "sym_overlap": 71.58182104416689,
+   "pair": 79.42659040872205
+  },
+  "DFN-CLIP-L/14 + PE-Spatial-L/14": {
+   "sym_overlap": 71.499887524005,
+   "pair": 79.47007392114777
+  }
+ }
+}

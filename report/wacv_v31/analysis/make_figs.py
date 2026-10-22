@@ -29,7 +29,18 @@ D = json.load(open(HERE / "v31_min.json"))
 A = D["attrs"]
 HP, CL, JT, INK, MUTE = "#1F5BD8", "#D2731A", "#7A3FC8", "#18212D", "#626E7D"
 HP_BG, CL_BG, JT_BG = "#EDF2FD", "#FDF3E8", "#F4EEFC"
-plt.rcParams.update({"font.family": "Liberation Sans", "font.size": 7.5, "pdf.fonttype": 42, "mathtext.fontset": "stixsans",
+from matplotlib import font_manager as fm  # noqa: E402
+from matplotlib.font_manager import FontProperties  # noqa: E402
+for _f in ("TimesNewRoman-Regular.ttf", "TimesNewRoman-Italic.ttf"):   # same font as make_arch_figs.py (user, 2026-10-21)
+    fm.fontManager.addfont(str(Path.home() / ".local/share/fonts" / _f))
+BOLD_TTF = "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"   # no Times New Roman Bold installed; metric-compatible
+
+
+def BF(size):
+    return FontProperties(fname=BOLD_TTF, size=size)
+
+
+plt.rcParams.update({"font.family": "Times New Roman", "font.size": 7.5, "pdf.fonttype": 42, "mathtext.fontset": "stix",
                      "text.color": INK, "axes.edgecolor": INK, "axes.labelcolor": INK, "xtick.color": INK, "ytick.color": INK})
 
 
@@ -275,8 +286,8 @@ ax.text(11.2, 11.2 / 2 - .3, "better of the two", fontsize=7.2, ha="right", va="
         transform_rotates_text=True, rotation_mode="anchor")
 ax.text(xmax - .2, -.25, "mean of the two", fontsize=7.2, ha="right", va="top", color=MUTE)
 ax.set_xlim(0, xmax); ax.set_ylim(-2.6, 9.6)
-ax.set_xlabel("gap between DINOv3 and CLIP query heads (points)", fontsize=7.2, labelpad=2)
-ax.set_ylabel("joint query head − mean of the two", fontsize=7.2, labelpad=2)
+ax.set_xlabel("gap between DINOv3 and CLIP query heads (balanced accuracy, points)", fontsize=7.2, labelpad=2)
+ax.set_ylabel("joint query head − mean of the two\n(balanced accuracy, points)", fontsize=7.2, labelpad=2)
 ax.tick_params(labelsize=7, length=2.5, pad=2)
 for s_ in ("top", "right"):
     ax.spines[s_].set_visible(False)
@@ -291,7 +302,7 @@ names = [("Accessory-Hat", "hat"), ("UpperBody-Color-White", "upper white"), ("L
 fig = plt.figure(figsize=(7.0, 3.85))
 iw, ih, gap, ggap, top = .092, .36, .012, .055, .87      # image size in figure fractions (7.0 x 3.55 in)
 x = (1 - (6 * iw + 3 * gap + 2 * ggap)) / 2
-fig.text(.01, .985, "(a)", fontsize=8.5, weight="bold", va="top")
+fig.text(.01, .985, "(a)", fontproperties=BF(8.5), va="top")
 for (a, lab) in names:
     i = A.index(a); hsel = share[:, i] > .5
     wh = (heads_att[i][hsel][:, 1:99]).sum(0); wc = (heads_att[i][~hsel][:, 100:]).sum(0)
@@ -300,7 +311,7 @@ for (a, lab) in names:
         for s_ in axi.spines.values():
             s_.set_edgecolor(c); s_.set_linewidth(1.0)
         axi.set_title(cap, fontsize=7.2, color=c, pad=2, linespacing=1.15)
-    fig.text(x + iw + gap / 2, top + .075, f"“{lab}”", fontsize=8.5, ha="center", va="bottom", weight="bold")
+    fig.text(x + iw + gap / 2, top + .075, f"“{lab}”", fontproperties=BF(8.5), ha="center", va="bottom")
     x += 2 * iw + gap + ggap + gap
 # (b) heatmap: 8 attention heads x 40 attributes, colour = share of attention on H+ tokens
 cmap = matplotlib.colors.LinearSegmentedColormap.from_list("route", [CL, "#FFFFFF", HP])
@@ -311,7 +322,7 @@ axh.set_ylabel("attention head", fontsize=6.8, labelpad=3)
 axh.set_xticks(range(len(A))); axh.set_xticklabels([short(a) for a in A], fontsize=6.8, rotation=60, ha="right", rotation_mode="anchor")
 for t, a in zip(axh.get_xticklabels(), A):
     if a in dict(names):
-        t.set_fontweight("bold")
+        t.set_fontproperties(BF(t.get_fontsize()))
 axh.set_xticks(np.arange(-.5, len(A)), minor=True); axh.set_yticks(np.arange(-.5, 8), minor=True)
 axh.grid(which="minor", color="white", lw=.6); axh.tick_params(which="both", length=0, pad=2)
 for s_ in axh.spines.values():
@@ -322,7 +333,7 @@ nH = (share > .5).sum(0)
 for i in range(len(A)):
     axh.text(i, -.85, str(nH[i]), fontsize=6.8, ha="center", va="bottom", color=HP)
 axh.text(-.7, -.85, "# on DINOv3", fontsize=6.8, ha="right", va="bottom", color=HP)
-fig.text(.01, .468, "(b)", fontsize=8.5, weight="bold", va="top")
+fig.text(.01, .468, "(b)", fontproperties=BF(8.5), va="top")
 cax = fig.add_axes([.84, .452, .13, .018])
 cb = fig.colorbar(matplotlib.cm.ScalarMappable(norm=matplotlib.colors.Normalize(0, 1), cmap=cmap), cax=cax, orientation="horizontal")
 cb.set_ticks([0, .5, 1]); cb.set_ticklabels(["0", "0.5", "1"]); cax.xaxis.set_ticks_position("top")
